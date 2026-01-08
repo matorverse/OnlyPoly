@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Dice Debugger (Fixed)</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            background: #1a1a1a;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            gap: 20px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            cursor: pointer;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+        }
+
+        .btn:hover {
+            background: #444;
+        }
+
+        /* Override positioning for debug */
+        .dice-container-center {
+            position: relative;
+            top: auto;
+            left: auto;
+            transform: none;
+            width: 300px;
+            height: 150px;
+            border: 1px dashed #555;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Dice Debugger (Fixed)</h1>
+    <div class="dice-container-center" id="diceContainer">
+        <div class="dice-wrapper">
+            <div class="dice" id="dice1">
+                <div class="face front"></div>
+                <div class="face back"></div>
+                <div class="face top"></div>
+                <div class="face bottom"></div>
+                <div class="face right"></div>
+                <div class="face left"></div>
+            </div>
+            <div class="dice" id="dice2">
+                <div class="face front"></div>
+                <div class="face back"></div>
+                <div class="face top"></div>
+                <div class="face bottom"></div>
+                <div class="face right"></div>
+                <div class="face left"></div>
+            </div>
+        </div>
+    </div>
+    <div class="controls">
+        <button class="btn" onclick="show(1)">1</button>
+        <button class="btn" onclick="show(2)">2</button>
+        <button class="btn" onclick="show(3)">3</button>
+        <button class="btn" onclick="show(4)">4</button>
+        <button class="btn" onclick="show(5)">5</button>
+        <button class="btn" onclick="show(6)">6</button>
+    </div>
+
+    <!-- Logic mirrors Fixed dice.js -->
+    <script>
+        const dice1 = document.getElementById('dice1');
+        const dice2 = document.getElementById('dice2');
+
+        function renderDice(diceElement, value) {
+            let transform = '';
+            switch (value) {
+                case 1: transform = 'rotateX(0deg) rotateY(0deg)'; break;
+                case 6: transform = 'rotateX(180deg) rotateY(0deg)'; break;
+                // Fixed mappings:
+                case 2: transform = 'rotateX(90deg) rotateY(0deg)'; break;  // Was -90, Fixed
+                case 5: transform = 'rotateX(-90deg) rotateY(0deg)'; break; // Was 90, Fixed
+                case 3: transform = 'rotateX(0deg) rotateY(-90deg)'; break; // Was 90, Fixed
+                case 4: transform = 'rotateX(0deg) rotateY(90deg)'; break;  // Was -90, Fixed
+            }
+            diceElement.style.transform = transform;
+        }
+
+        function show(val) {
+            dice1.style.animation = 'none';
+            dice2.style.animation = 'none';
+            renderDice(dice1, val);
+            renderDice(dice2, val);
+        }
+
+        show(1);
+    </script>
+</body>
+
+</html>

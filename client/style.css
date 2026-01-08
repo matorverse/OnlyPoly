@@ -167,8 +167,12 @@ body {
 }
 
 @keyframes rolling {
-  50% {
-    transform: rotateX(455deg) rotateY(455deg);
+  0% {
+    transform: rotateX(0deg) rotateY(0deg);
+  }
+
+  100% {
+    transform: rotateX(720deg) rotateY(720deg);
   }
 }
 
@@ -186,7 +190,7 @@ body {
   background: linear-gradient(145deg, #dddbd8, #fff);
 }
 
-.face::before {
+/* .face::before {
   position: absolute;
   content: '';
   width: 100%;
@@ -194,7 +198,7 @@ body {
   border-radius: 15px;
   background: #f6f3f0;
   transform: translateZ(-1px);
-}
+} */
 
 .face::after {
   position: absolute;
@@ -209,28 +213,29 @@ body {
 
 /* Face Positions */
 .front {
-  transform: translateZ(50px);
+  transform: translateZ(40px);
 }
 
 .back {
-  transform: rotateX(180deg) translateZ(50px);
+  transform: rotateX(180deg) translateZ(40px);
 }
 
 .top {
-  transform: rotateX(90deg) translateZ(50px);
+  transform: rotateX(90deg) translateZ(40px);
 }
 
 .bottom {
-  transform: rotateX(-90deg) translateZ(50px);
+  transform: rotateX(-90deg) translateZ(40px);
 }
 
 .right {
-  transform: rotateY(90deg) translateZ(50px);
+  transform: rotateY(90deg) translateZ(40px);
 }
 
 .left {
-  transform: rotateY(-90deg) translateZ(50px);
+  transform: rotateY(-90deg) translateZ(40px);
 }
+
 
 /* Dot Patterns */
 .front::after {
@@ -242,37 +247,37 @@ body {
 
 .back::after {
   margin: -35px 0 0 -30px;
-  box-shadow: 40px 0,
-    0 25px,
-    40px 25px,
-    0 50px,
-    40px 50px;
+  box-shadow: 32px 0 black,
+    0 25px black,
+    32px 25px black,
+    0 50px black,
+    32px 50px black;
 }
 
 .top::after {
   margin: -24px 0 0 -24px;
-  box-shadow: 32px 32px;
+  box-shadow: 26px 26px black;
 }
 
 .bottom::after {
   margin: -28px 0 0 -28px;
-  box-shadow: 20px 20px,
-    40px 40px,
-    40px 0,
-    0 40px;
+  box-shadow: 20px 20px black,
+    40px 40px black,
+    40px 0 black,
+    0 40px black;
 }
 
 .right::after {
   margin: -24px 0 0 -24px;
-  box-shadow: 32px 0,
-    0 32px,
-    32px 32px;
+  box-shadow: 26px 0 black,
+    0 26px black,
+    26px 26px black;
 }
 
 .left::after {
   margin: -28px 0 0 -28px;
-  box-shadow: 20px 20px,
-    40px 40px;
+  box-shadow: 20px 20px black,
+    40px 40px black;
 }
 
 
@@ -2027,8 +2032,8 @@ body {
 }
 
 .dice {
-  width: 48px;
-  height: 48px;
+  width: 80px;
+  height: 80px;
   background: linear-gradient(145deg, #ffffff, #e0e0e0);
   border-radius: 8px;
   box-shadow:
@@ -2044,7 +2049,7 @@ body {
 }
 
 .dice.rolling {
-  animation: diceRoll 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: rolling 1s linear infinite;
 }
 
 .dice-container.active .dice {
