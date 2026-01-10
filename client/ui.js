@@ -15,21 +15,47 @@ window.OnlypolyUI = (function () {
     renderBoard();
   }
 
+  // --- FLAGS & ASSETS ---
+  // --- FLAGS & ASSETS ---
+  // FLAGS_DB is loaded from flags.js into window.FLAGS_DB
+
+  function getFlagSVG(country) {
+    if (!country) return '';
+    const db = window.FLAGS_DB || {};
+    let svg = db[country] || db['Generic'] || '<svg viewBox="0 0 100 100"><text y="80" font-size="80">🏳️</text></svg>';
+
+    // Strip hardcoded width and height to allow CSS to control size
+    // Matches width="..." or height="..." and removes them
+    // Also ensures preserveAspectRatio is set if needed, but usually default is fine
+    svg = svg.replace(/\s(width|height)="[^"]*"/g, '');
+
+    return svg;
+  }
+
+
+
   function renderBoard() {
     boardEl.innerHTML = '';
 
     // Add Center Logo
     const center = document.createElement('div');
     center.className = 'board-center';
-    center.textContent = 'ONLYPOLY';
+    center.innerHTML = '<div class="board-brand">ONLYPOLY</div>';
     boardEl.appendChild(center);
 
     if (!boardData.length) return;
 
     boardData.forEach((tile, index) => {
       const div = document.createElement('div');
-      div.className = 'tile';
+      div.className = 'tile BoardTile'; // Base class
       div.dataset.tileId = tile.id;
+      div.dataset.type = tile.type;
+
+      // Determine Side for Badge Positioning
+      if (index >= 0 && index <= 10) div.classList.add('side-bottom');
+      else if (index > 10 && index <= 20) div.classList.add('side-left');
+      else if (index > 20 && index <= 30) div.classList.add('side-top');
+      else if (index > 30) div.classList.add('side-right');
 
       const pos = getPerimeterGridPos(index);
       if (!pos) return;
@@ -37,62 +63,73 @@ window.OnlypolyUI = (function () {
       div.style.gridRow = String(pos.row);
       div.style.gridColumn = String(pos.col);
 
-      // Semantic Classes for styling hooks if needed
-      if (tile.type === 'property') div.classList.add('property');
-      if (tile.type === 'chance') div.classList.add('chance');
-      if (tile.type === 'jail' || tile.type === 'goto_jail') div.classList.add('jail');
-      if (index % 10 === 0) div.classList.add('corner');
+      // --- TILE HEADER (Owner Color) ---
+      const header = document.createElement('div');
+      header.className = 'tile-header';
+      if (tile.ownerColor) {
+        header.style.backgroundColor = tile.ownerColor;
+        header.classList.add('owned');
+      }
+      div.appendChild(header);
 
-      // Content Construction
-      if (tile.color) {
-        const bar = document.createElement('div');
-        bar.className = 'tile-color-bar';
-        bar.style.background = tile.color;
-        div.appendChild(bar);
+      // --- FLAG BADGE (Floating) ---
+      // Remains absolute, existing logic holds.
+      if (tile.country) {
+        const flagBadge = document.createElement('div');
+        flagBadge.className = 'flag-badge';
+        flagBadge.innerHTML = getFlagSVG(tile.country);
+        div.appendChild(flagBadge);
       }
 
-      // Name
+      // --- CONTENT CONTAINER ---
+      // Flex column to distribute Name (top/mid) and Price (bottom)
+      const content = document.createElement('div');
+      content.className = 'tile-content';
+
+      // 1. Name
       const name = document.createElement('div');
       name.className = 'tile-name';
-      // Shorten standard names for cleaner look
       name.textContent = tile.name.replace('Place', 'Pl').replace('Avenue', 'Ave');
-      name.style.fontFamily = '"Yanone Kaffeesatz", sans-serif';
-      name.style.fontWeight = '400';
-      name.style.letterSpacing = '0.05em';
-      div.appendChild(name);
+      content.appendChild(name);
 
-      // Icons
-      if (['chance', 'community_chest', 'electric_company', 'water_works', 'railroad', 'tax', 'luxury_tax'].includes(tile.type) || tile.group === 'Special') {
+      // 2. Body/Icon (Special tiles)
+      if (['chance', 'community_chest', 'tax', 'airport', 'utility'].includes(tile.type)) {
         const icon = document.createElement('div');
-        icon.style.fontSize = '1.5em';
-        if (tile.type === 'chance') icon.innerHTML = '<span style="color: #ff6b35;">?</span>';
-        else if (tile.name.includes('Chest')) icon.innerHTML = '📦';
-        else if (tile.type === 'tax') icon.innerHTML = '💎';
-        else if (tile.type === 'railroad') icon.innerHTML = '🚂';
-        else if (tile.type === 'utility') icon.innerHTML = '⚡';
-        else if (tile.type === 'jail') icon.innerHTML = '⛓️';
-        else if (tile.type === 'goto_jail') icon.innerHTML = '👮';
-        else if (tile.type === 'vacation') icon.innerHTML = '🚗';
-        div.appendChild(icon);
+        icon.className = 'tile-icon';
+        if (tile.type === 'chance') icon.textContent = '?';
+        if (tile.type === 'community_chest') icon.textContent = '📦';
+        if (tile.type === 'airport') icon.textContent = '✈️';
+        if (tile.type === 'utility') icon.textContent = '💡';
+        if (tile.type === 'tax') icon.textContent = '💰';
+        content.appendChild(icon);
       }
 
-      // Price
-      if (tile.price) {
+      // 3. Price
+      if (tile.price || tile.amount) {
         const price = document.createElement('div');
         price.className = 'tile-price';
-        price.textContent = `$${tile.price}`;
-        div.appendChild(price);
+        // Use 'M' or 'K' suffix logic if needed, or simple number
+        price.textContent = `₩${tile.price || tile.amount}`;
+        content.appendChild(price);
+      } else if (tile.type === 'start') {
+        // Special label
+        // content.appendChild(...)
       }
 
-      // Development container
-      const devContainer = document.createElement('div');
-      devContainer.className = 'tile-development-container';
-      devContainer.style.position = 'absolute';
-      devContainer.style.top = '2px';
-      devContainer.style.right = '2px';
-      devContainer.style.display = 'flex';
-      devContainer.style.gap = '1px';
-      div.appendChild(devContainer);
+      div.appendChild(content);
+
+      // --- CORNER HANDLING ---
+      if (index % 10 === 0) {
+        div.classList.add('corner-tile');
+        div.innerHTML = ''; // Clear structure for corners, render custom
+        const label = document.createElement('div');
+        label.className = 'corner-label';
+        if (tile.type === 'start') label.textContent = 'GO';
+        else if (tile.type === 'jail') label.textContent = 'JAIL';
+        else if (tile.type === 'parking') label.textContent = 'FREE PARKING';
+        else if (tile.type === 'goto_jail') label.textContent = 'GO TO JAIL';
+        div.appendChild(label);
+      }
 
       boardEl.appendChild(div);
     });

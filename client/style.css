@@ -192,6 +192,8 @@ h4,
   backface-visibility: hidden;
 }
 
+
+
 /* Inner filler background for back of face? */
 .DiceFace:after {
   content: "";
@@ -300,8 +302,40 @@ h4,
   grid-area: three;
 }
 
-.DiceFace[data-side="6"] .DiceDot:nth-child(3) {
-  grid-area: four;
+.tile-name {
+  font-family: 'Yanone Kaffeesatz', sans-serif;
+  font-size: 0.8em;
+  font-weight: 500;
+  text-transform: uppercase;
+  text-align: center;
+  line-height: 1;
+  color: #eee;
+  margin-bottom: 2px;
+}
+
+.tile-price {
+  font-size: 0.7em;
+  color: #aaa;
+  margin-top: auto;
+  /* Push to bottom of body */
+}
+
+/* Corner Tiles */
+.corner-tile {
+  /* Different background? */
+  background: #2f264c;
+  justify-content: center;
+  align-items: center;
+  display: flex;
+}
+
+.corner-label {
+  font-family: 'Yanone Kaffeesatz', sans-serif;
+  font-weight: 700;
+  font-size: 1.2em;
+  transform: rotate(-45deg);
+  text-align: center;
+  color: var(--accent-gold);
 }
 
 .DiceFace[data-side="6"] .DiceDot:nth-child(4) {
@@ -338,7 +372,146 @@ h4,
 }
 
 
-/* --- BOARD & TILES (RICHUP STYLE) --- */
+/* --- MAIN LAYOUT (RESPONSIVE) --- */
+.game-layout {
+  display: flex;
+  flex: 1;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Sidebar (Desktop) */
+.sidebar {
+  width: 350px;
+  background: var(--panel-bg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid rgba(0, 0, 0, 0.2);
+  z-index: 100;
+  box-shadow: -5px 0 15px rgba(0, 0, 0, 0.3);
+}
+
+/* Mobile Layout: Bottom Bar */
+@media (max-width: 900px) {
+  :root {
+    /* Scale down dice on mobile */
+    --dice-size: 2.2rem;
+  }
+
+  .game-layout {
+    flex-direction: column;
+  }
+
+  .board-container {
+    flex: 1;
+    /* Ensure board container takes available height */
+    max-height: calc(100vh - 200px);
+    /* Leave room for bottom sheet */
+    align-items: center;
+    /* Center Vertically */
+  }
+
+  .monopoly-board {
+    /* On mobile, prioritize width, but map to available height */
+    width: min(98vw, 60vh);
+    /* Adjust as needed */
+    height: min(98vw, 60vh);
+    font-size: min(2vw, 1.8vh);
+    /* Adjust base font size for board */
+  }
+
+  .sidebar {
+    position: relative;
+    /* Back to flow to interact with board height */
+    width: 100%;
+    /* Full width */
+    height: auto;
+    max-height: 40vh;
+    flex-direction: column;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 15px;
+    margin: 0;
+    margin-top: 10px;
+    /* Requested separation */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: #231d36;
+    z-index: 200;
+    box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.3);
+    border-radius: 15px 15px 0 0;
+  }
+
+  /* Font overrides for small screens */
+  .tile-name {
+    font-size: 0.5em;
+    /* Ensure it fits */
+    letter-spacing: 0;
+  }
+
+  .tile-price {
+    font-size: 0.45em;
+  }
+
+  /* Reduce Flag Badge size on mobile */
+  .flag-badge {
+    width: 18px;
+    height: 18px;
+    border-width: 1px;
+  }
+
+  /* Adjust badge offsets for smaller size */
+  .side-bottom .flag-badge {
+    top: -8px;
+  }
+
+  .side-top .flag-badge {
+    bottom: -8px;
+  }
+
+  .side-left .flag-badge {
+    right: -8px;
+  }
+
+  .side-right .flag-badge {
+    left: -8px;
+  }
+
+
+
+  /* Adjust internal sidebar elements */
+  .sidebar .logo-area {
+    display: none;
+  }
+
+  .player-list {
+    display: none;
+    /* or block if we want them in the scrollable sheet */
+  }
+
+  .control-panel {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    /* Stack buttons vertically */
+    gap: 12px;
+    flex-shrink: 0;
+    /* Prevent shrinking */
+  }
+
+  .btn-richup {
+    font-size: 1.1rem;
+    padding: 1em 1em;
+    /* comfortable touch target */
+    width: 100%;
+    /* Full width buttons */
+    flex-shrink: 0;
+    /* Never squash */
+  }
+}
+
 
 .board-container {
   flex: 1;
@@ -395,83 +568,152 @@ h4,
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
 }
 
-/* Richup Tile Style */
-/* Richup Tile Style (Dark Mode) */
+/* Richup-like Premium Tile Style */
 .tile {
+  /* Dark, Modern Background */
   background-color: #262a4c;
-  background-image: linear-gradient(to bottom right, #262a4c, #2f264c);
-  color: #fff;
-  border-radius: 0.5em;
-  /* Match BoardTile border-radius */
-  position: relative;
+  background-image: linear-gradient(135deg, #262a4c 0%, #201c36 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+
+  /* Layout */
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0;
-  transition: transform 0.2s, z-index 0s 0.2s;
-  overflow: hidden;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  position: relative;
+  overflow: visible;
+
+  /* Basic Grid Item constraints */
+  min-width: 0;
+  min-height: 0;
+
+  /* Spacing */
+  padding: 4px;
+
+  /* Effects */
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.2s, z-index 0s 0.2s;
+  z-index: 1;
+  /* Default z */
 }
 
 .tile:hover {
-  transform: scale(1.15);
+  transform: scale(1.1) translateZ(10px);
   z-index: 100;
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 15px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(102, 71, 224, 0.3);
+  border-color: rgba(255, 255, 255, 0.3);
   transition: transform 0.2s, z-index 0s;
 }
 
-/* Color Bar properties */
-.tile-color-bar {
-  height: 22%;
+/* Header strip (Owner Color) */
+/* We keep the header bar but make it sleek */
+.tile-header {
+  height: 6px;
   width: 100%;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-  /* Colors injected by JS are solid */
+  border-radius: 4px;
+  background: transparent;
+  /* Invisible if unowned */
+  margin-bottom: 2px;
+  flex-shrink: 0;
 }
 
-/* Handling Special Corners */
-/* Handling Special Corners */
-.tile[data-type="corner"] {
-  background-color: #262a4c;
-  /* Keep uniform dark */
-  background-image: linear-gradient(to bottom right, #262a4c, #2f264c);
-  justify-content: center;
-  padding: 5px;
+.tile-header.owned {
+  box-shadow: 0 0 8px currentColor;
+  /* Glow effect */
 }
 
-/* Handling Dark Tiles? Richup actually uses light tiles on drak board usually, or fully abstract. */
-/* Based on provided Css, it uses dark panel theme but board might be standard. */
-/* Wait, richup.css has .tippy-box themes. */
-/* If user wants 'richup cells', usually it's clean flat modern. */
-
-.tile-name {
-  font-size: 0.6em;
-  text-align: center;
-  color: #fff;
-  /* White text for dark tiles */
-  font-weight: 400;
-  margin-top: 4px;
-  line-height: 1.1;
-  padding: 0 2px;
+/* Internal Layout Wrapper */
+.tile-content {
   flex: 1;
   display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  /* Name top, Price bottom */
   align-items: center;
-  justify-content: center;
+  width: 100%;
+}
+
+/* Typography */
+.tile-name {
+  font-family: 'Yanone Kaffeesatz', sans-serif;
+  font-size: 0.6em;
+  /* Drastically reduced for fit */
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  text-align: center;
+  color: #f1f5f9;
+  line-height: 1.0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+
+  /* Text Layout */
+  width: 100%;
+  white-space: normal;
+  /* Allow wrapping so text doesn't vanish */
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  /* Limit to 2 lines */
+  -webkit-box-orient: vertical;
+
+  /* Flex shrink to allow price to stay visible */
+  flex-shrink: 1;
 }
 
 .tile-price {
-  font-size: 0.65em;
-  color: rgba(255, 255, 255, 0.6);
-  /* Muted white */
-  margin-bottom: 3px;
+  font-family: 'Yanone Kaffeesatz', sans-serif;
+  font-size: 0.55em;
+  /* Very small but readable */
+  color: #94a3b8;
   font-weight: 400;
+  margin-top: auto;
 }
 
-/* Icon / Graphic placeholders for Railroads/Utils */
+/* Icons for Utilities/Stations - Centered in remaining space */
 .tile-icon {
-  font-size: 1.5em;
-  opacity: 0.6;
+  font-size: 1.0em;
+  opacity: 0.8;
+  margin: auto 0;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
 }
+
+/* --- BADGE OVERLAP PREVENTION --- */
+/* The badge is absolute (~32px + border), intruding significantly.
+   We need robust padding to ensure text NEVER touches it.
+*/
+
+/* Bottom Row: Badge is at TOP. Push content DOWN. */
+.side-bottom .tile-content {
+  padding-top: 18px;
+}
+
+/* Top Row: Badge is at BOTTOM. Push content UP. 
+   Price is at bottom, so padding bottom protects the price. */
+.side-top .tile-content {
+  padding-bottom: 18px;
+}
+
+/* Left Row: Badge is at RIGHT. Padding Right. */
+.side-left .tile-content {
+  padding-right: 18px;
+}
+
+/* Right Row: Badge is at LEFT. Padding Left. */
+.side-right .tile-content {
+  padding-left: 18px;
+}
+
+
+/* Corner Tiles - Distinct Look */
+.tile[data-type="start"],
+.tile[data-type="jail"],
+.tile[data-type="vacation"],
+.tile[data-type="goto_jail"] {
+  background: #1e1b2e;
+  border-color: rgba(255, 255, 255, 0.15);
+  justify-content: center;
+  align-items: center;
+}
+
 
 /* --- SIDEBAR & CONTROLS --- */
 .sidebar {
@@ -487,7 +729,7 @@ h4,
 
 @media (max-width: 900px) {
   .sidebar {
-    width: 280px;
+    width: 100%;
   }
 }
 
@@ -683,3 +925,74 @@ h4,
     opacity: 1;
   }
 }
+
+/* --- FLAG "BADGE" STYLES --- */
+/* The flag is now a floating circle/badge overlapping the border towards the center */
+
+.tile {
+  position: relative;
+  /* Ensure absolute children are relative to tile */
+}
+
+.flag-badge {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  /* Circle badge */
+  background: white;
+  /* Optional: background for transparent flags */
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+  /* Above header and body */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid #ccc;
+}
+
+.flag-badge svg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Cover the circle */
+}
+
+/* Positioning based on side - "Towards Center" */
+
+/* Bottom Row: Center is UP. Badge at TOP edge of tile (overlapping header) */
+.side-bottom .flag-badge {
+  top: -10px;
+  /* Pull up to overlap top border */
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Top Row: Center is DOWN. Badge at BOTTOM edge of tile */
+/* NOTE: Top row tiles are usually rotated or flipped in layout. 
+   If they are standard, "towards center" is bottom. */
+.side-top .flag-badge {
+  bottom: -10px;
+  /* Pull down */
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Left Row: Center is RIGHT. Badge at RIGHT edge */
+.side-left .flag-badge {
+  right: -10px;
+  /* Pull right */
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Right Row: Center is LEFT. Badge at LEFT edge */
+.side-right .flag-badge {
+  left: -10px;
+  /* Pull left */
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Adjustments for non-owned headers or specific rotations if needed */

@@ -80,6 +80,15 @@
         <h2 class="font-richup" style="font-size: 2rem; margin-bottom: 20px;">Join Game</h2>
         <input id="nameInput" placeholder="Enter Nickname"
           style="width: 100%; padding: 12px; margin-bottom: 20px; border-radius: 6px; border: 1px solid #444; background: #222; color: white; font-size: 1.1em;">
+
+        <div style="margin-bottom: 20px;">
+          <label style="color: #aaa; display:block; margin-bottom:10px;">Choose Color</label>
+          <div id="loginColorGrid" style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <!-- Populated by JS -->
+          </div>
+          <input type="hidden" id="selectedColorInput" value="#00d2ff">
+        </div>
+
         <button id="joinBtn" class="btn-richup">Enter Lobby</button>
       </div>
     </div>
@@ -132,6 +141,7 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="flags.js"></script>
   <script src="ui.js"></script>
   <script src="dice.js"></script>
   <script src="game.js"></script>

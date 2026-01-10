@@ -101,10 +101,35 @@
     { name: 'Red', value: '#e74c3c' },
   ];
 
+  // Init Login Color Grid
+  const loginColorGrid = document.getElementById('loginColorGrid');
+  const selectedColorInput = document.getElementById('selectedColorInput');
+
+  if (loginColorGrid) {
+    PLAYER_COLORS.forEach((c, idx) => {
+      const dot = document.createElement('div');
+      dot.style.width = '30px';
+      dot.style.height = '30px';
+      dot.style.borderRadius = '50%';
+      dot.style.background = c.value;
+      dot.style.cursor = 'pointer';
+      dot.style.border = idx === 0 ? '3px solid white' : '3px solid transparent';
+      dot.style.boxShadow = '0 2px 5px rgba(0,0,0,0.5)';
+
+      dot.onclick = () => {
+        selectedColorInput.value = c.value;
+        Array.from(loginColorGrid.children).forEach(child => child.style.border = '3px solid transparent');
+        dot.style.border = '3px solid white';
+      };
+      loginColorGrid.appendChild(dot);
+    });
+  }
+
   joinBtn.addEventListener('click', () => {
     const name = (nameInput.value || '').trim();
+    const color = selectedColorInput.value;
     if (!name) return;
-    socket.emit('join_lobby', { name, existingId: sessionId });
+    socket.emit('join_lobby', { name, color, existingId: sessionId });
   });
 
   readyToggle.addEventListener('click', () => {
@@ -252,6 +277,31 @@
 
   socket.on('state_update', (newState) => {
     state = newState;
+
+    // Inject Owner Colors & Country Data into Board for UI
+    // (Assuming backend might send country, or we map it manually if missing)
+    if (state.board) {
+      state.board.forEach(tile => {
+        // Find owner
+        let owner = null;
+        Object.values(state.players).forEach(p => {
+          if (p.ownedProperties && p.ownedProperties[tile.id]) {
+            owner = p;
+          }
+        });
+        if (owner) {
+          tile.ownerColor = owner.color;
+        } else {
+          tile.ownerColor = null;
+        }
+        // Mock Country if missing (for testing flags)
+        // In real app, this should come from DB/Server
+        if (tile.type === 'property' && !tile.country) {
+          tile.country = 'Generic';
+        }
+      });
+    }
+
     OnlypolyUI.setBoard(state.board);
     OnlypolyUI.renderPlayers(state.players, state.currentPlayerId);
     renderLobby();
