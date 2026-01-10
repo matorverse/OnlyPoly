@@ -1,7 +1,18 @@
-// Client game logic & networking for ONLYPOLY
+// Client game logic & networking for ONLYPOLY - Richup Edition
 
 (function () {
-  const socket = io();
+  // 1. Recover or Generate Session ID
+  const STORAGE_KEY = 'onlypoly_session_id';
+  let sessionId = localStorage.getItem(STORAGE_KEY);
+  if (!sessionId) {
+    sessionId = 'sess-' + Math.random().toString(36).substr(2, 9) + Date.now();
+    localStorage.setItem(STORAGE_KEY, sessionId);
+  }
+
+  // 2. Connect with Session ID
+  const socket = io({
+    auth: { sessionId }
+  });
 
   const nameInput = document.getElementById('nameInput');
   const joinBtn = document.getElementById('joinBtn');
@@ -20,6 +31,7 @@
   const payJailBtn = document.getElementById('payJailBtn');
   const tradeBtn = document.getElementById('tradeBtn');
   const lobbyPanel = document.getElementById('lobbyPanel');
+  const loginModal = document.getElementById('loginModal'); // DIRECT REF
 
   const auctionModal = document.getElementById('auctionModal');
   const auctionInfo = document.getElementById('auctionInfo');
@@ -33,7 +45,6 @@
   const dice1 = document.getElementById('dice1');
   const dice2 = document.getElementById('dice2');
 
-  // New menu elements
   const menuToggle = document.getElementById('menuToggle');
   const secondaryMenu = document.getElementById('secondaryMenu');
   const closeSecondaryMenu = document.getElementById('closeSecondaryMenu');
@@ -51,17 +62,34 @@
   let currentAuction = null;
   let auctionInterval = null;
 
-  // CRITICAL: Add debounced resize handler for stable board scaling
+  function show(el) {
+    if (!el) return;
+    el.hidden = false;
+    el.style.display = ''; // Clear inline display:none
+    el.classList.remove('hidden');
+  }
+
+  function hide(el) {
+    if (!el) return;
+    el.hidden = true;
+    el.style.display = 'none';
+    el.classList.add('hidden');
+  }
+
+  function hideLogin() {
+    if (loginModal) loginModal.classList.remove('visible');
+  }
+  function showLogin() {
+    if (loginModal) loginModal.classList.add('visible');
+  }
+
   let resizeTimeout = null;
   window.addEventListener('resize', () => {
     if (resizeTimeout) clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(() => {
-      // Board scales automatically via CSS, no manual intervention needed
-      console.log('[resize] Board scaled via CSS responsive design');
     }, 250);
   });
 
-  // Available player colors (colorblind-safe, high contrast)
   const PLAYER_COLORS = [
     { name: 'Cyan', value: '#00d2ff' },
     { name: 'Pink', value: '#ff4b81' },
@@ -76,7 +104,7 @@
   joinBtn.addEventListener('click', () => {
     const name = (nameInput.value || '').trim();
     if (!name) return;
-    socket.emit('join_lobby', { name });
+    socket.emit('join_lobby', { name, existingId: sessionId });
   });
 
   readyToggle.addEventListener('click', () => {
@@ -93,12 +121,9 @@
   });
 
   rollBtn.addEventListener('click', () => {
-    // Prevent double-clicks and spam
     if (rollBtn.disabled) return;
     rollBtn.disabled = true;
     rollBtn.textContent = 'Rolling...';
-    // CRITICAL: Start animation immediately (will show random values)
-    // Server will send actual values which we'll animate to
     animateDiceRoll();
     socket.emit('roll_dice');
   });
@@ -135,7 +160,6 @@
     openTradeComposer();
   });
 
-  // Menu toggle functionality
   menuToggle?.addEventListener('click', () => {
     secondaryMenu.classList.remove('hidden');
   });
@@ -168,8 +192,7 @@
 
   playersBtn?.addEventListener('click', () => {
     secondaryMenu.classList.add('hidden');
-    // TODO: Implement players info modal
-    toast('Players info coming soon!');
+    OnlypolyUI.toast('Players info coming soon!');
   });
 
   auctionModal.addEventListener('click', (e) => {
@@ -179,10 +202,37 @@
     }
   });
 
-  socket.on('joined', (payload) => {
+  socket.on('session_restored', (payload) => {
     me = { id: payload.playerId, token: payload.token, hostId: payload.hostId };
     lobbyStatus.hidden = false;
-    lobbyPanel.classList.remove('hidden');
+    show(lobbyPanel);
+    hideLogin();
+    OnlypolyUI.toast(`Welcome back, ${payload.name}!`, 'info');
+    if (sessionId !== payload.playerId) {
+      sessionId = payload.playerId;
+      localStorage.setItem(STORAGE_KEY, sessionId);
+    }
+  });
+
+  socket.on('session_invalid', () => {
+    console.log('Session invalid, clearing local storage.');
+    localStorage.removeItem(STORAGE_KEY);
+    sessionId = null;
+    showLogin();
+    OnlypolyUI.toast('Please enter name to join.', 'info');
+  });
+
+  socket.on('joined', (payload) => {
+    me = { id: payload.playerId, token: payload.token, hostId: payload.hostId };
+
+    if (me.id && me.id !== sessionId) {
+      sessionId = me.id;
+      localStorage.setItem(STORAGE_KEY, sessionId);
+    }
+
+    lobbyStatus.hidden = false;
+    show(lobbyPanel);
+    hideLogin();
     renderColorSelection();
   });
 
@@ -190,6 +240,14 @@
     if (reason === 'color_taken') {
       OnlypolyUI.toast('Color already taken. Choose another.', 'rent');
     }
+  });
+
+  socket.on('join_error', ({ reason }) => {
+    OnlypolyUI.toast(`Cannot join: ${reason}`, 'error');
+  });
+
+  socket.on('server_error', ({ reason }) => {
+    OnlypolyUI.toast(`Server Error: ${reason}`, 'error');
   });
 
   socket.on('state_update', (newState) => {
@@ -202,7 +260,6 @@
 
   socket.on('dice_rolled', ({ playerId, dice, tile, events }) => {
     const meTurn = playerId === me.id;
-    // Show dice result visually (animation already triggered by button click)
     showDiceResult(dice.d1, dice.d2);
     if (meTurn) {
       OnlypolyUI.toast(`Moved ${dice.total} spaces`, 'chance');
@@ -214,44 +271,24 @@
       if (ev.type === 'chance' && meTurn) {
         OnlypolyUI.toast(ev.card.text, 'chance');
       }
-      // Re-enable buy/auction buttons if property is unowned
       if (ev.type === 'unowned_property' && meTurn) {
         buyBtn.disabled = false;
         auctionBtn.disabled = false;
       }
     });
-    // Update UI after roll
     renderGame();
   });
 
   socket.on('action_rejected', ({ reason }) => {
-    // Handle server-side rejections gracefully
-    if (reason === 'already_rolled') {
-      OnlypolyUI.toast('You have already rolled this turn.', 'rent');
-    } else if (reason === 'must_roll_first') {
-      OnlypolyUI.toast('You must roll dice before ending turn.', 'rent');
-    } else if (reason === 'already_bought' || reason === 'auction_started' || reason === 'auction_already_started') {
-      OnlypolyUI.toast('Action not available.', 'rent');
-    } else if (reason === 'cannot_start_auction') {
-      OnlypolyUI.toast('Cannot start auction right now.', 'rent');
-    } else if (reason === 'invalid_bid_step') {
-      OnlypolyUI.toast('Invalid bid amount.', 'rent');
-    } else if (reason === 'bid_rejected') {
-      OnlypolyUI.toast('Bid rejected (not enough money or auction ended).', 'rent');
-    } else if (reason === 'not_owner') {
-      OnlypolyUI.toast('You do not own this property.', 'rent');
-    } else if (reason === 'not_your_turn') {
-      OnlypolyUI.toast('It is not your turn.', 'rent');
-    } else if (reason === 'cannot_build') {
-      OnlypolyUI.toast('Cannot build on this property.', 'rent');
-    } else if (reason === 'cannot_pay_fine') {
-      OnlypolyUI.toast('Insufficient funds to pay jail fine.', 'rent');
-    } else if (reason === 'too_fast') {
-      OnlypolyUI.toast('Please wait before rolling again.', 'rent');
-    } else if (reason === 'purchase_failed') {
-      OnlypolyUI.toast('Purchase failed. Please try again.', 'rent');
-    }
-    renderGame(); // Refresh button states
+    const map = {
+      'already_rolled': 'You have already rolled this turn.',
+      'must_roll_first': 'You must roll dice before ending turn.',
+      'already_bought': 'Action not available.',
+      'not_your_turn': 'It is not your turn.',
+      'insufficient_funds': 'Insufficient funds.'
+    };
+    OnlypolyUI.toast(map[reason] || 'Action rejected.', 'rent');
+    renderGame();
   });
 
   socket.on('auction_started', (auction) => {
@@ -276,6 +313,15 @@
 
   socket.on('trade_updated', () => {
     closeTradeModal();
+  });
+
+  socket.on('player_bankrupt', ({ playerId }) => {
+    if (playerId === me.id) {
+      OnlypolyUI.toast('You went bankrupt! Game over for you.', 'error');
+    } else {
+      const p = state.players[playerId];
+      if (p) OnlypolyUI.toast(`${p.name} went bankrupt.`, 'info');
+    }
   });
 
   function renderLobby() {
@@ -308,13 +354,14 @@
   function renderGame() {
     if (!state) return;
     if (!state.started) {
-      gamePanel.classList.add('hidden');
-      lobbyPanel.classList.remove('hidden');
+      hide(gamePanel);
+      show(lobbyPanel);
       menuToggle?.classList.add('hidden');
       return;
     }
-    lobbyPanel.classList.add('hidden');
-    gamePanel.classList.remove('hidden');
+    hide(lobbyPanel);
+    show(gamePanel);
+    hideLogin(); // Ensure login hidden in game too
     menuToggle?.classList.remove('hidden');
 
     const myPlayer = state.players[me.id];
@@ -334,21 +381,16 @@
     const hasBought = state.hasBoughtThisTurn || false;
     const hasAuction = state.hasStartedAuctionThisTurn || false;
 
-    // Roll button: only enabled if it's my turn AND I haven't rolled
     rollBtn.disabled = !isMyTurn || hasRolled;
     rollBtn.textContent = hasRolled ? 'Rolled' : 'Roll';
-
-    // End turn: enabled if it's my turn AND I've rolled (or in jail)
     endTurnBtn.disabled = !isMyTurn || (!hasRolled && !myPlayer?.inJail);
 
-    // Buy/Auction: only enabled if it's my turn, I've rolled, and haven't bought/auctioned
     const canBuyOrAuctionBase = isMyTurn && hasRolled && !hasBought && !hasAuction;
     let canBuyOrAuction = canBuyOrAuctionBase;
     if (canBuyOrAuctionBase && myPlayer) {
       const tileId = Number(myPlayer.position);
       const tile = (state.board || []).find((t) => t.id === tileId) || null;
       const isBuyable = tile && (tile.type === 'property' || tile.type === 'airport' || tile.type === 'utility');
-      // Determine ownership by scanning players' ownedProperties (server is source of truth)
       let isOwned = false;
       if (isBuyable) {
         Object.values(state.players || {}).some((p) => {
@@ -364,14 +406,9 @@
 
     buyBtn.disabled = !canBuyOrAuction;
     auctionBtn.disabled = !canBuyOrAuction;
-
-    // Pay jail: only if it's my turn and I'm in jail
     payJailBtn.disabled = !isMyTurn || !myPlayer?.inJail;
-
-    // Trade: always available (doesn't require turn)
     tradeBtn.disabled = false;
 
-    // Update properties count
     const ownedProperties = Object.keys(myPlayer?.ownedProperties || {}).length;
     if (propertiesCount) {
       propertiesCount.textContent = `(${ownedProperties})`;
@@ -397,11 +434,8 @@
   function renderAuction() {
     if (!currentAuction) return;
     const prop = state.board.find((t) => t.id === currentAuction.propertyId);
-    const bidder =
-      state.players[currentAuction.highestBidder || ''] || null;
-    auctionInfo.textContent = `${prop ? prop.name : 'Property'
-      } – $${currentAuction.highestBid || 0} ${bidder ? `by ${bidder.name}` : ''
-      }`;
+    const bidder = state.players[currentAuction.highestBidder || ''] || null;
+    auctionInfo.textContent = `${prop ? prop.name : 'Property'} – $${currentAuction.highestBid || 0} ${bidder ? `by ${bidder.name}` : ''}`;
     const remaining = Math.max(0, currentAuction.endsAt - Date.now());
     auctionTimer.textContent = `${Math.ceil(remaining / 1000)}s remaining`;
   }
@@ -451,7 +485,6 @@
       if (!partner) return;
 
       const { maxGive, maxTake } = computeLimits();
-      // Clamp moneyDelta in case partner changed
       moneyDelta = Math.max(-maxTake, Math.min(maxGive, moneyDelta));
 
       tradeModal.classList.remove('hidden');
@@ -601,22 +634,8 @@
       const right = document.createElement('div');
       right.className = 'trade-side';
 
-      renderSide(
-        left,
-        `${myPlayer.name} (you)`,
-        myPlayer.money,
-        getOwnedTileIds(myPlayer),
-        offerProps,
-        myPlayer.color || '#00d2ff'
-      );
-      renderSide(
-        right,
-        partner.name,
-        partner.money,
-        getOwnedTileIds(partner),
-        requestProps,
-        partner.color || '#ff4b81'
-      );
+      renderSide(left, `${myPlayer.name} (you)`, myPlayer.money, getOwnedTileIds(myPlayer), offerProps, myPlayer.color || '#00d2ff');
+      renderSide(right, partner.name, partner.money, getOwnedTileIds(partner), requestProps, partner.color || '#ff4b81');
 
       split.appendChild(left);
       split.appendChild(right);
@@ -651,7 +670,6 @@
 
       tradeContent.appendChild(root);
     }
-
     renderTradeComposer();
   }
 
@@ -659,7 +677,7 @@
     tradeModal.classList.remove('hidden');
     tradeContent.innerHTML = '';
     const from = state.players[trade.from];
-    const to = state.players[trade.to];
+    // const to = state.players[trade.to];
 
     function tileName(pid) {
       const t = (state.board || []).find((x) => x.id === Number(pid));
@@ -715,7 +733,6 @@
     tradeModal.classList.add('hidden');
   }
 
-  // Close trade modal on backdrop click
   tradeModal?.addEventListener('click', (e) => {
     if (e.target === tradeModal || e.target.classList.contains('modal-backdrop')) {
       closeTradeModal();
@@ -724,193 +741,35 @@
 
   function renderPropertiesPanel() {
     if (!state || !me.id || !propertiesList || !propertiesTitle) return;
-
     const myPlayer = state.players[me.id];
-    if (!myPlayer) {
-      propertiesPanel?.classList.add('hidden');
-      return;
-    }
-
+    if (!myPlayer) return;
     const ownedProperties = Object.entries(myPlayer.ownedProperties || {});
-    const propertyCount = ownedProperties.length;
-
-    // Update title with count
-    propertiesTitle.textContent = `Properties (${propertyCount})`;
-
-    // Clear existing properties
+    propertiesTitle.textContent = `Properties (${ownedProperties.length})`;
     propertiesList.innerHTML = '';
 
-    if (propertyCount === 0) {
-      const emptyMessage = document.createElement('div');
-      emptyMessage.className = 'properties-empty';
-      emptyMessage.textContent = 'No properties owned yet';
-      emptyMessage.style.cssText = 'text-align: center; color: var(--text-muted); padding: 20px; font-size: 13px;';
-      propertiesList.appendChild(emptyMessage);
+    if (ownedProperties.length === 0) {
+      propertiesList.innerHTML = '<div style="padding:20px; text-align:center; color:#888;">No properties owned</div>';
       return;
     }
 
-    // Sort properties by ID (board order)
     ownedProperties.sort(([a], [b]) => Number(a) - Number(b));
-
-    ownedProperties.forEach(([propertyId, ownership]) => {
-      const tile = state.board.find(t => t.id === Number(propertyId));
-      if (!tile || tile.type !== 'property') return;
-
-      const propertyCard = document.createElement('div');
-      propertyCard.className = 'property-card';
-      propertyCard.style.setProperty('--property-color', tile.color || '#666');
-
-      const propertyName = document.createElement('div');
-      propertyName.className = 'property-name';
-      propertyName.textContent = tile.name;
-
-      const propertyCountry = document.createElement('div');
-      propertyCountry.className = 'property-country';
-      propertyCountry.textContent = tile.country || '';
-
-      const propertyDevelopment = document.createElement('div');
-      propertyDevelopment.className = 'property-development';
-
-      if (ownership.hotel) {
-        propertyDevelopment.classList.add('hotel');
-        propertyDevelopment.innerHTML = '<span class="hotel-icon">🏨</span> Hotel';
-      } else if (ownership.houses > 0) {
-        propertyDevelopment.innerHTML = `<span class="house-icon">🏠</span> × ${ownership.houses}`;
-      } else {
-        propertyDevelopment.textContent = 'Land';
-        propertyDevelopment.style.color = 'var(--text-muted)';
-      }
-
-      propertyCard.appendChild(propertyName);
-      propertyCard.appendChild(propertyCountry);
-      propertyCard.appendChild(propertyDevelopment);
-
-      // Add click handler to highlight property without moving board
-      propertyCard.addEventListener('click', () => {
-        const tileEl = document.querySelector(`[data-tile-id="${propertyId}"]`);
-        if (tileEl) {
-          // CRITICAL: Do NOT scrollIntoView - it causes board to shift
-          // Instead, highlight tile visually without moving viewport
-          tileEl.style.transform = 'scale(1.1)';
-          tileEl.style.boxShadow = '0 0 20px rgba(0, 210, 255, 0.6)';
-          tileEl.style.zIndex = '1000';
-          setTimeout(() => {
-            tileEl.style.transform = '';
-            tileEl.style.boxShadow = '';
-            tileEl.style.zIndex = '';
-          }, 1000);
-        }
-      });
-
-      propertiesList.appendChild(propertyCard);
-    });
-  }
-
-  // Dice animation functions - Exact Reference Implementation
-  function animateDiceRoll() {
-    if (!dice1 || !dice2) return;
-
-    // Start rolling animation (reference uses style.animation)
-    dice1.style.animation = 'rolling 1s';
-    dice2.style.animation = 'rolling 1s';
-    diceContainer.classList.add('active');
-  }
-
-  function showDiceResult(d1, d2) {
-    if (!dice1 || !dice2) return;
-
-    console.log(`[DICE] Showing result: d1=${d1}, d2=${d2}, total=${d1 + d2}`);
-
-    // Apply transforms after animation (1050ms to match 1s animation)
-    setTimeout(() => {
-      rollDice(dice1, d1);
-      rollDice(dice2, d2);
-      console.log(`[DICE] Transforms applied: ${d1}, ${d2}`);
-    }, 1050);
-  }
-
-  function rollDice(diceEl, value) {
-    // Exact transform mapping from reference
-    switch (value) {
-      case 1:
-        diceEl.style.transform = 'rotateX(0deg) rotateY(0deg)';
-        break;
-      case 6:
-        diceEl.style.transform = 'rotateX(180deg) rotateY(0deg)';
-        break;
-      case 2:
-        diceEl.style.transform = 'rotateX(-90deg) rotateY(0deg)';
-        break;
-      case 5:
-        diceEl.style.transform = 'rotateX(90deg) rotateY(0deg)';
-        break;
-      case 3:
-        diceEl.style.transform = 'rotateX(0deg) rotateY(90deg)';
-        break;
-      case 4:
-        diceEl.style.transform = 'rotateX(0deg) rotateY(-90deg)';
-        break;
-      default:
-        break;
-    }
-
-    diceEl.style.animation = 'none';
-  }
-
-  function renderPlayersInfo() {
-    if (!playersInfoRow) return;
-    if (!state || !state.started) {
-      playersInfoRow.innerHTML = '';
-      return;
-    }
-    playersInfoRow.innerHTML = '';
-    Object.values(state.players || {}).forEach((p) => {
-      if (p.bankrupt) return;
+    ownedProperties.forEach(([pid, own]) => {
+      const tile = state.board.find(t => t.id === Number(pid));
+      if (!tile) return;
       const card = document.createElement('div');
-      card.className = 'player-card';
-      if (state.currentPlayerId === p.id) {
-        card.classList.add('active-turn');
-      }
-      if (p.color) {
-        card.style.borderLeftColor = p.color;
-        card.style.borderLeftWidth = '3px';
-      }
-
-      const name = document.createElement('div');
-      name.className = 'player-card-name';
-      name.textContent = p.name;
-      if (p.color) {
-        name.style.color = p.color;
-      }
-
-      const money = document.createElement('div');
-      money.className = 'player-card-money';
-      money.textContent = `$${p.money}`;
-      if (p.money < 200) {
-        money.classList.add('low-funds');
-      }
-
-      const status = document.createElement('div');
-      status.className = 'player-card-status';
-      if (p.inJail) {
-        status.textContent = '🔒 Jail';
-      } else if (p.money < 0) {
-        status.textContent = '⚠️ Debt';
-      }
-
-      card.appendChild(name);
-      card.appendChild(money);
-      if (status.textContent) card.appendChild(status);
-      playersInfoRow.appendChild(card);
+      card.className = 'property-card';
+      card.innerHTML = `
+        <div class="property-name" style="color:${tile.color || '#fff'}">${tile.name}</div>
+        <div class="property-development">
+            ${own.hotel ? '🏨 Hotel' : own.houses ? '🏠'.repeat(own.houses) : 'Land'}
+        </div>
+      `;
+      propertiesList.appendChild(card);
     });
   }
 
-  // Override renderGame to include players info
-  const originalRenderGame = renderGame;
-  renderGame = function () {
-    originalRenderGame();
-    renderPlayersInfo();
-  };
+  function renderColorSelection() {
+    if (!document.getElementById('colorGrid')) return;
+  }
+
 })();
-
-

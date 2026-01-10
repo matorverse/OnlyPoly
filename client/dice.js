@@ -1,101 +1,123 @@
-// Dice Animation & Logic Management
-
+// Dice Animation & Logic Management (Richup 3D Style)
 (function () {
-  const dice1 = document.getElementById('dice1');
-  const dice2 = document.getElementById('dice2');
+  const diceOverlay = document.getElementById('diceOverlay');
+  const dice1El = document.getElementById('dice1');
+  const dice2El = document.getElementById('dice2');
 
-  function renderDice(diceElement, value) {
-    if (!diceElement) return;
+  // Dot configurations for each value (1-6)
+  const dotMap = {
+    1: ['dot-center'],
+    2: ['dot-tl', 'dot-br'],
+    3: ['dot-tl', 'dot-center', 'dot-br'],
+    4: ['dot-tl', 'dot-tr', 'dot-bl', 'dot-br'],
+    5: ['dot-tl', 'dot-tr', 'dot-center', 'dot-bl', 'dot-br'],
+    6: ['dot-tl', 'dot-tr', 'dot-ml', 'dot-mr', 'dot-bl', 'dot-br']
+  };
 
-    // Reset transform to avoid accumulation issues (though we animate from scratch usually)
-    // We want to force a reflow if we were already in this state, but for a fresh roll:
+  // Rotation map to show face (X, Y)
+  const faceRotations = {
+    1: { x: 0, y: 0 },
+    2: { x: 0, y: 90 },  // Face 2 is at -90, so rotate cube +90 to bring it front.
+    3: { x: 90, y: 0 },  // Face 3 is at -90X, rotate cube +90X
+    4: { x: -90, y: 0 }, // Face 4 is at 90X, rotate cube -90X
+    5: { x: 0, y: -90 }, // Face 5 is at 90Y, rotate cube -90Y
+    6: { x: 180, y: 0 }  // Face 6 is at 180Y.
+  };
 
-    // Mapping matches the CSS 3D transforms for the faces
-    // Front: 1, Back: 6, Top: 2, Bottom: 5, Right: 3, Left: 4
-    // Wait, let's verify standard dice opposites: 1-6, 2-5, 3-4.
-    // CSS keys from user snippet:
-    // 1: rotateX(0deg) rotateY(0deg)   -> Front
-    // 6: rotateX(180deg) rotateY(0deg) -> Back
-    // 2: rotateX(-90deg) rotateY(0deg) -> Bottom? Wait, user code said:
-    //    case 2: rotateX(-90deg) ...
-    //    .bottom { transform: rotateX(-90deg) ... } -> So 2 is Bottom.
-    //    Standard dice: Top/Bottom are usually 2/5 or 3/4? 
-    //    User code: 
-    //      Top: rotateX(90deg) 
-    //      Bottom: rotateX(-90deg)
-    //    User JS for 2: rotateX(-90deg) -> Matches Bottom class.
-    //    User JS for 5: rotateX(90deg) -> Matches Top class.
-    //    Allows 2 and 5 to be opposite.
-    //    User JS for 3: rotateX(0deg) rotateY(90deg) -> Right?
-    //    .right { transform: rotateY(90deg) ... } -> Matches Right class.
-    //    User JS for 4: rotateX(0deg) rotateY(-90deg) -> Left?
-    //    .left { transform: rotateY(-90deg) ... } -> Matches Left class.
-
-    // So the face mapping is:
-    // 1: Front
-    // 6: Back
-    // 2: Bottom
-    // 5: Top
-    // 3: Right
-    // 4: Left
-
-    // Let's stick to the user's JS switch case exactly to match their CSS/Geom.
-
-    let transform = '';
-    switch (value) {
-      case 1:
-        transform = 'rotateX(0deg) rotateY(0deg)';
-        break;
-      case 6:
-        transform = 'rotateX(180deg) rotateY(0deg)';
-        break;
-      case 2:
-        transform = 'rotateX(90deg) rotateY(0deg)';
-        break;
-      case 5:
-        transform = 'rotateX(-90deg) rotateY(0deg)';
-        break;
-      case 3:
-        transform = 'rotateX(0deg) rotateY(-90deg)';
-        break;
-      case 4:
-        transform = 'rotateX(0deg) rotateY(90deg)';
-        break;
-      default:
-        transform = 'rotateX(0deg) rotateY(0deg)';
-        break;
+  function ensureCube(element) {
+    if (!element) return null;
+    let cube = element.querySelector('.richup-cube');
+    if (!cube) {
+      cube = document.createElement('div');
+      cube.className = 'richup-cube';
+      // Create 6 faces
+      for (let i = 1; i <= 6; i++) {
+        const face = document.createElement('div');
+        face.className = `cube-face face-${i}`;
+        // Add dots
+        const dots = dotMap[i] || [];
+        dots.forEach((pos) => {
+          const d = document.createElement('div');
+          d.className = `dice-dot ${pos}`;
+          face.appendChild(d);
+        });
+        cube.appendChild(face);
+      }
+      element.innerHTML = '';
+      element.appendChild(cube);
     }
-
-    diceElement.style.transform = transform;
+    return cube;
   }
 
-  // Global function to trigger rolling animation
-  // Server calls this via socket events implicitly by users clicking roll,
-  // but we split "start animation" vs "show result".
+  // Helper to apply rotation
+  function rotateCubeTo(cube, value) {
+    const rot = faceRotations[value] || { x: 0, y: 0 };
+
+    // Add random extra revolutions for "tumble" effect
+    // e.g. add 2 full spins (720deg) to X and Y randomly
+    // We keep the rotation accumulating so it doesn't snap back? 
+    // Actually standard CSS transition handles specific degrees nicely if we just set a new high value.
+    // But we need to ensure it lands on the specific face visual.
+    // The logic: 360 * N + targetRot.
+
+    const extraX = 360 * (2 + Math.floor(Math.random() * 2));
+    const extraY = 360 * (2 + Math.floor(Math.random() * 2));
+
+    const finalX = rot.x + extraX;
+    const finalY = rot.y + extraY;
+
+    cube.style.transform = `rotateX(${finalX}deg) rotateY(${finalY}deg)`;
+  }
+
+  // Start rolling animation
   window.animateDiceRoll = function () {
-    if (dice1) {
-      dice1.style.animation = 'none';
-      dice1.offsetHeight; /* trigger reflow */
-      dice1.style.transform = ''; // Clear static transform to ensure animation starts from 0
-      dice1.style.animation = 'rolling 1s linear infinite'; // Spin indefinitely until result comes
-    }
-    if (dice2) {
-      dice2.style.animation = 'none';
-      dice2.offsetHeight;
-      dice2.style.transform = ''; // Clear static transform
-      dice2.style.animation = 'rolling 1s linear infinite';
-    }
+    if (!diceOverlay) return;
+    diceOverlay.classList.add('visible'); // Show container if hidden (though we want it persistent now)
+
+    [dice1El, dice2El].forEach(container => {
+      const cube = ensureCube(container);
+      if (cube) {
+        cube.style.transition = 'none'; // reset transition for instant spin start
+        // Reset transform to something neutral or keep previous?
+        // To spin smoothly, we should probably start from 0 or current?
+        // Resetting to 0 makes it jump if we don't handle it. 
+        // For now, simple reset works for the "tumbling" animation class.
+        cube.style.transform = 'rotateX(0deg) rotateY(0deg)';
+        // Force reflow
+        void cube.offsetWidth;
+        cube.classList.add('rolling');
+      }
+    });
   };
 
-  // Global function to stop animation and show result
+  // Show final result
   window.showDiceResult = function (d1Value, d2Value) {
-    if (dice1) {
-      dice1.style.animation = 'none';
-      renderDice(dice1, d1Value);
-    }
-    if (dice2) {
-      dice2.style.animation = 'none';
-      renderDice(dice2, d2Value);
-    }
+    if (!diceOverlay) return;
+
+    const diceResults = [
+      { el: dice1El, val: d1Value },
+      { el: dice2El, val: d2Value }
+    ];
+
+    diceResults.forEach(({ el, val }) => {
+      const cube = ensureCube(el);
+      if (cube) {
+        cube.classList.remove('rolling');
+        // Re-enable transition for the landing
+        cube.style.transition = 'transform 1.2s cubic-bezier(0.15, 0.9, 0.35, 1)';
+        // Force reflow
+        void cube.offsetWidth;
+        rotateCubeTo(cube, val);
+      }
+    });
+
+    // Disable auto-hiding to keep dice visible as per user request
+    // diceOverlay.classList.remove('visible'); 
   };
+
+  // Initialize cubes on load so they are visible immediately
+  [dice1El, dice2El].forEach(ensureCube);
+  // Also Make visible by default
+  if (diceOverlay) diceOverlay.classList.add('visible');
+
 })();
