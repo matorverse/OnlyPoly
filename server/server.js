@@ -7,13 +7,12 @@ const GameState = require('./gameState');
 const AuctionSystem = require('./auctionSystem');
 const TradeSystem = require('./tradeSystem');
 const { generateToken } = require('./utils');
+const DB = require('./db');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: '*',
-  },
+  cors: { origin: '*' },
 });
 
 const CLIENT_DIR = path.join(__dirname, '..', 'client');
@@ -21,36 +20,107 @@ app.use(express.static(CLIENT_DIR));
 
 const gameStatePlaceholder = {};
 const auctionSystem = new AuctionSystem(io, gameStatePlaceholder);
-const gameState = new GameState(io, auctionSystem);
-auctionSystem.gameState = gameState;
-const tradeSystem = new TradeSystem(io, gameState);
 
-// Serve index.html for root
+// Lazy initialization of GameState after DB is ready
+let gameState = null;
+let tradeSystem = null;
+
+// Start init
+DB.initialize().then(() => {
+  console.log('DB Initialized.');
+  gameState = new GameState(io, auctionSystem);
+  auctionSystem.gameState = gameState;
+  tradeSystem = new TradeSystem(io, gameState);
+}).catch(err => {
+  console.error('Fatal DB Error:', err);
+  process.exit(1);
+});
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(CLIENT_DIR, 'index.html'));
 });
 
-io.on('connection', (socket) => {
+// Helper to ensure GameState is ready before processing events (rare edge case during boot)
+function ensureReady(socket) {
+  if (!gameState) {
+    socket.emit('server_error', { reason: 'booting' });
+    return false;
+  }
+  return true;
+}
+
+io.on('connection', async (socket) => {
+  // Wait slightly or check if gameState exists
+  if (!gameState) {
+    // If client connects immediately before DB resolves, try to wait or drop.
+    // Usually fast enough.
+    // We can retry via setImmediate or just fail.
+    console.warn('Socket attached before GameState ready.');
+    // Simple loop to wait?
+    // Better: check inside handlers.
+  }
+
   let playerId = null;
 
-  socket.on('reconnect', () => {
-    if (playerId) {
-      socket.emit('state_update', gameState.serialize());
+  // 1. Session Recovery Logic
+  const sessionId = socket.handshake.auth.sessionId;
+  if (sessionId && gameState) {
+    try {
+      const playerRecord = await DB.getPlayer(sessionId);
+      if (playerRecord) {
+        const restored = gameState.reconnectPlayer(sessionId, socket.id);
+        if (restored) {
+          playerId = sessionId;
+          console.log(`[Session] Restored player ${playerRecord.name} (${playerId})`);
+          socket.emit('session_restored', {
+            playerId,
+            name: playerRecord.name,
+            token: playerRecord.token,
+            hostId: gameState.hostId
+          });
+          socket.emit('state_update', gameState.serialize());
+        } else {
+          socket.emit('session_invalid');
+        }
+      } else {
+        socket.emit('session_invalid');
+      }
+    } catch (err) {
+      console.error('Session check error:', err);
     }
-  });
+  }
 
-  socket.on('join_lobby', ({ name }) => {
+  socket.on('join_lobby', ({ name, existingId }) => {
+    if (!ensureReady(socket)) return;
     if (!name || typeof name !== 'string') return;
-    const id = socket.id;
+
+    // Check if recovery is trying to happen via existingId argument from client
+    // (fallback for clients that don't support auth handshake yet?)
+    const id = existingId || socket.id;
+
+    // logic...
     const token = generateToken();
     const player = gameState.addPlayer(id, name.slice(0, 16), socket.id, token);
-    if (!player) return;
+
+    if (!player) {
+      if (gameState.players[id]) {
+        playerId = id;
+        gameState.reconnectPlayer(id, socket.id);
+        socket.emit('joined', { playerId: id, token, hostId: gameState.hostId });
+        io.emit('state_update', gameState.serialize());
+        return;
+      }
+      socket.emit('join_error', { reason: 'Game started or full' });
+      return;
+    }
+
     playerId = id;
     socket.emit('joined', { playerId: id, token, hostId: gameState.hostId });
     io.emit('state_update', gameState.serialize());
   });
 
   socket.on('set_player_color', ({ color }) => {
+    if (!ensureReady(socket)) return;
     if (!playerId || gameState.started) return;
     const ok = gameState.setPlayerColor(playerId, color);
     if (ok) {
@@ -61,12 +131,14 @@ io.on('connection', (socket) => {
   });
 
   socket.on('set_ready', ({ ready }) => {
+    if (!ensureReady(socket)) return;
     if (!playerId) return;
     gameState.markReady(playerId, !!ready);
     io.emit('state_update', gameState.serialize());
   });
 
   socket.on('start_game', () => {
+    if (!ensureReady(socket)) return;
     if (!playerId) return;
     const ok = gameState.startGame(playerId);
     if (!ok) return;
@@ -74,124 +146,90 @@ io.on('connection', (socket) => {
   });
 
   socket.on('roll_dice', () => {
+    if (!ensureReady(socket)) return;
     if (!playerId || !gameState.assertTurn(playerId)) return;
-    // CRITICAL: Prevent multiple rolls and rapid clicking
     if (gameState.hasRolledThisTurn) {
       socket.emit('action_rejected', { reason: 'already_rolled' });
       return;
     }
-    
-    // CRITICAL: Add debouncing to prevent rapid clicking
     if (gameState._lastRollTime && (Date.now() - gameState._lastRollTime) < 1000) {
       socket.emit('action_rejected', { reason: 'too_fast' });
       return;
     }
-    
     const result = gameState.rollAndMove(playerId);
     if (!result) {
       socket.emit('action_rejected', { reason: 'invalid_roll' });
       return;
     }
-    
     gameState._lastRollTime = Date.now();
     io.emit('dice_rolled', { playerId, ...result });
     io.emit('state_update', gameState.serialize());
   });
 
   socket.on('buy_property', ({ propertyId }) => {
+    if (!ensureReady(socket)) return;
     if (!playerId || !gameState.assertTurn(playerId)) {
       socket.emit('action_rejected', { reason: 'not_your_turn' });
       return;
     }
-    
-    // CRITICAL: Validate propertyId is a number
     const propId = Number(propertyId);
     if (!isFinite(propId)) {
       socket.emit('action_rejected', { reason: 'invalid_property' });
       return;
     }
-    
-    // Prevent buying if already bought this turn
     if (gameState.hasBoughtThisTurn) {
       socket.emit('action_rejected', { reason: 'already_bought' });
       return;
     }
-    // Prevent buying if auction was started
     if (gameState.hasStartedAuctionThisTurn) {
       socket.emit('action_rejected', { reason: 'auction_started' });
       return;
     }
-    
     const tile = gameState.getTile(propId);
     const player = gameState.players[playerId];
-    
     if (!tile || !player) {
       socket.emit('action_rejected', { reason: 'invalid_tile_or_player' });
       return;
     }
-    
-    // CRITICAL: Strict ownership check - property must be unowned
     const currentOwner = gameState.findOwnerOfProperty(propId);
     if (currentOwner) {
       socket.emit('action_rejected', { reason: 'property_already_owned', owner: currentOwner });
       return;
     }
-    
-    // CRITICAL: Validate price and money are numbers
     const price = Number(tile.price);
-    if (!isFinite(price) || price <= 0) {
-      socket.emit('action_rejected', { reason: 'invalid_price' });
-      return;
-    }
-    
-    // CRITICAL: Ensure player money is valid number
-    if (typeof player.money !== 'number' || !isFinite(player.money)) {
-      console.error('[buy_property] Invalid player.money:', player.money);
-      player.money = 1500; // Reset to safe value
-    }
-    
-    if (player.money < price) {
+    if (!isFinite(price) || price <= 0 || player.money < price) {
       socket.emit('action_rejected', { reason: 'insufficient_funds' });
       return;
     }
-    
-    // All checks passed - execute purchase
+
     gameState.hasBoughtThisTurn = true;
     const success = gameState.transferMoney(playerId, null, price, 'purchase');
     if (success) {
       gameState.assignProperty(propId, playerId);
       io.emit('state_update', gameState.serialize());
     } else {
-      // Roll back the purchase flag if transfer failed
       gameState.hasBoughtThisTurn = false;
       socket.emit('action_rejected', { reason: 'purchase_failed' });
     }
   });
 
   socket.on('start_auction', ({ propertyId }) => {
+    if (!ensureReady(socket)) return;
     if (!playerId || !gameState.assertTurn(playerId)) return;
-    // Prevent auction if already bought this turn
     if (gameState.hasBoughtThisTurn) {
       socket.emit('action_rejected', { reason: 'already_bought' });
       return;
     }
-    // Prevent multiple auctions per turn
     if (gameState.hasStartedAuctionThisTurn) {
       socket.emit('action_rejected', { reason: 'auction_already_started' });
       return;
     }
-
     const propId = Number(propertyId);
-    if (!isFinite(propId)) {
-      socket.emit('action_rejected', { reason: 'invalid_property' });
-      return;
-    }
-    if (gameState.findOwnerOfProperty(propId)) {
+    if (!isFinite(propId) || gameState.findOwnerOfProperty(propId)) {
       socket.emit('action_rejected', { reason: 'property_already_owned' });
       return;
     }
     gameState.hasStartedAuctionThisTurn = true;
-
     const auction = auctionSystem.startAuction(propId, playerId);
     if (!auction) {
       gameState.hasStartedAuctionThisTurn = false;
@@ -200,8 +238,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('auction_bid', ({ step }) => {
+    if (!ensureReady(socket)) return;
     if (!playerId) return;
-
     const s = Number(step);
     const amount = s === 2 || s === 10 || s === 100 ? s : null;
     if (!amount) {
@@ -215,8 +253,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('end_turn', () => {
+    if (!ensureReady(socket)) return;
     if (!playerId || !gameState.assertTurn(playerId)) return;
-    // Require roll before ending turn (unless in jail)
     const player = gameState.players[playerId];
     if (!player.inJail && !gameState.hasRolledThisTurn) {
       socket.emit('action_rejected', { reason: 'must_roll_first' });
@@ -228,6 +266,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('pay_jail_fine', () => {
+    if (!ensureReady(socket)) return;
     if (!playerId || !gameState.assertTurn(playerId)) {
       socket.emit('action_rejected', { reason: 'not_your_turn' });
       return;
@@ -241,23 +280,17 @@ io.on('connection', (socket) => {
   });
 
   socket.on('build_house', ({ propertyId }) => {
+    if (!ensureReady(socket)) return;
     if (!playerId) return;
-    // CRITICAL: Building requires turn validation to prevent cheating
     if (!gameState.assertTurn(playerId)) {
       socket.emit('action_rejected', { reason: 'not_your_turn' });
       return;
     }
-    // CRITICAL: Validate property ownership
     if (!gameState.doesPlayerOwnProperty(playerId, propertyId)) {
       socket.emit('action_rejected', { reason: 'not_owner' });
       return;
     }
-    // CRITICAL: Validate propertyId is a number
     const propId = Number(propertyId);
-    if (!isFinite(propId)) {
-      socket.emit('action_rejected', { reason: 'invalid_property' });
-      return;
-    }
     const success = gameState.buildHouse(playerId, propId);
     if (success) {
       io.emit('state_update', gameState.serialize());
@@ -267,23 +300,17 @@ io.on('connection', (socket) => {
   });
 
   socket.on('build_hotel', ({ propertyId }) => {
+    if (!ensureReady(socket)) return;
     if (!playerId) return;
-    // CRITICAL: Building requires turn validation to prevent cheating
     if (!gameState.assertTurn(playerId)) {
       socket.emit('action_rejected', { reason: 'not_your_turn' });
       return;
     }
-    // CRITICAL: Validate property ownership
     if (!gameState.doesPlayerOwnProperty(playerId, propertyId)) {
       socket.emit('action_rejected', { reason: 'not_owner' });
       return;
     }
-    // CRITICAL: Validate propertyId is a number
     const propId = Number(propertyId);
-    if (!isFinite(propId)) {
-      socket.emit('action_rejected', { reason: 'invalid_property' });
-      return;
-    }
     const success = gameState.buildHotel(playerId, propId);
     if (success) {
       io.emit('state_update', gameState.serialize());
@@ -293,35 +320,36 @@ io.on('connection', (socket) => {
   });
 
   socket.on('propose_trade', (payload) => {
+    if (!ensureReady(socket)) return;
     if (!playerId) return;
     tradeSystem.createTrade(playerId, payload.toPlayerId, payload);
   });
 
   socket.on('accept_trade', ({ tradeId }) => {
+    if (!ensureReady(socket)) return;
     if (!playerId) return;
     tradeSystem.acceptTrade(tradeId, playerId);
     io.emit('state_update', gameState.serialize());
   });
 
   socket.on('reject_trade', ({ tradeId }) => {
+    if (!ensureReady(socket)) return;
     if (!playerId) return;
     tradeSystem.rejectTrade(tradeId, playerId);
   });
 
   socket.on('disconnect', () => {
-    if (!playerId) return;
+    if (!playerId || !gameState) return;
     gameState.removePlayer(playerId);
     io.emit('state_update', gameState.serialize());
   });
 });
 
-// Get local IP address for LAN connections
 function getLocalIP() {
   const os = require('os');
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
-      // Skip internal (loopback) and non-IPv4 addresses
       if (iface.family === 'IPv4' && !iface.internal) {
         return iface.address;
       }
@@ -339,10 +367,5 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('='.repeat(60));
   console.log(`\n📍 Local URL:    http://localhost:${PORT}`);
   console.log(`🌐 Network URL:  http://${localIP}:${PORT}`);
-  console.log('\n📱 To join from other devices:');
-  console.log(`   Open browser and go to: http://${localIP}:${PORT}`);
-  console.log('\n⚠️  Make sure all devices are on the SAME Wi-Fi network!');
   console.log('='.repeat(60) + '\n');
 });
-
-

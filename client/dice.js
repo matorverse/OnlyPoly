@@ -1,101 +1,187 @@
-// Dice Animation & Logic Management
-
+// Dice Animation & Logic Management (Ported from Richup)
 (function () {
-  const dice1 = document.getElementById('dice1');
-  const dice2 = document.getElementById('dice2');
+  const diceOverlay = document.getElementById('diceOverlay'); // This is the .dice-center-area in HTML
 
-  function renderDice(diceElement, value) {
-    if (!diceElement) return;
+  // We expect HTML to have <div id="dice1"></div> <div id="dice2"></div> inside the container
+  const dice1El = document.getElementById('dice1');
+  const dice2El = document.getElementById('dice2');
 
-    // Reset transform to avoid accumulation issues (though we animate from scratch usually)
-    // We want to force a reflow if we were already in this state, but for a fresh roll:
+  function buildCubeDOM(container) {
+    if (!container) return null;
 
-    // Mapping matches the CSS 3D transforms for the faces
-    // Front: 1, Back: 6, Top: 2, Bottom: 5, Right: 3, Left: 4
-    // Wait, let's verify standard dice opposites: 1-6, 2-5, 3-4.
-    // CSS keys from user snippet:
-    // 1: rotateX(0deg) rotateY(0deg)   -> Front
-    // 6: rotateX(180deg) rotateY(0deg) -> Back
-    // 2: rotateX(-90deg) rotateY(0deg) -> Bottom? Wait, user code said:
-    //    case 2: rotateX(-90deg) ...
-    //    .bottom { transform: rotateX(-90deg) ... } -> So 2 is Bottom.
-    //    Standard dice: Top/Bottom are usually 2/5 or 3/4? 
-    //    User code: 
-    //      Top: rotateX(90deg) 
-    //      Bottom: rotateX(-90deg)
-    //    User JS for 2: rotateX(-90deg) -> Matches Bottom class.
-    //    User JS for 5: rotateX(90deg) -> Matches Top class.
-    //    Allows 2 and 5 to be opposite.
-    //    User JS for 3: rotateX(0deg) rotateY(90deg) -> Right?
-    //    .right { transform: rotateY(90deg) ... } -> Matches Right class.
-    //    User JS for 4: rotateX(0deg) rotateY(-90deg) -> Left?
-    //    .left { transform: rotateY(-90deg) ... } -> Matches Left class.
+    // Clear existing
+    container.innerHTML = '';
 
-    // So the face mapping is:
-    // 1: Front
-    // 6: Back
-    // 2: Bottom
-    // 5: Top
-    // 3: Right
-    // 4: Left
+    // Structure:
+    // .DiceContainer
+    //   .DiceRoot
+    //     .DiceCube
+    //       Faces...
 
-    // Let's stick to the user's JS switch case exactly to match their CSS/Geom.
+    const diceContainer = document.createElement('div');
+    diceContainer.className = 'DiceContainer';
 
-    let transform = '';
-    switch (value) {
-      case 1:
-        transform = 'rotateX(0deg) rotateY(0deg)';
-        break;
-      case 6:
-        transform = 'rotateX(180deg) rotateY(0deg)';
-        break;
-      case 2:
-        transform = 'rotateX(90deg) rotateY(0deg)';
-        break;
-      case 5:
-        transform = 'rotateX(-90deg) rotateY(0deg)';
-        break;
-      case 3:
-        transform = 'rotateX(0deg) rotateY(-90deg)';
-        break;
-      case 4:
-        transform = 'rotateX(0deg) rotateY(90deg)';
-        break;
-      default:
-        transform = 'rotateX(0deg) rotateY(0deg)';
-        break;
+    // Shadow element is pseduo-element on DiceContainer in CSS, 
+    // but the extracted CSS used :before on DiceContainer. 
+    // So we don't need extra div for shadow if CSS handles it.
+
+    const diceRoot = document.createElement('div');
+    diceRoot.className = 'DiceRoot';
+    diceContainer.appendChild(diceRoot);
+
+    const diceCube = document.createElement('div');
+    diceCube.className = 'DiceCube';
+    diceRoot.appendChild(diceCube);
+
+    // Create Faces 1-6
+    for (let i = 1; i <= 6; i++) {
+      const face = document.createElement('div');
+      face.className = 'DiceFace';
+      face.dataset.side = i;
+
+      // Add dots based on side (CSS Grid handles positioning if we just add N dots)
+      // Side 1: 1 dot
+      // Side 2: 2 dots
+      // Side 3: 3 dots
+      // Side 4: 4 dots
+      // Side 5: 5 dots
+      // Side 6: 6 dots
+      for (let d = 0; d < i; d++) {
+        const dot = document.createElement('div');
+        dot.className = 'DiceDot';
+        face.appendChild(dot);
+      }
+      diceCube.appendChild(face);
     }
 
-    diceElement.style.transform = transform;
+    // Create Inner Planes (Structure)
+    const planeClasses = ['InnerPlane x-axis', 'InnerPlane y-axis', 'InnerPlane z-axis'];
+    planeClasses.forEach(cls => {
+      const plane = document.createElement('div');
+      plane.className = cls;
+      diceCube.appendChild(plane);
+    });
+
+    container.appendChild(diceContainer);
+    return { container: diceContainer, cube: diceCube };
   }
 
-  // Global function to trigger rolling animation
-  // Server calls this via socket events implicitly by users clicking roll,
-  // but we split "start animation" vs "show result".
-  window.animateDiceRoll = function () {
-    if (dice1) {
-      dice1.style.animation = 'none';
-      dice1.offsetHeight; /* trigger reflow */
-      dice1.style.transform = ''; // Clear static transform to ensure animation starts from 0
-      dice1.style.animation = 'rolling 1s linear infinite'; // Spin indefinitely until result comes
-    }
-    if (dice2) {
-      dice2.style.animation = 'none';
-      dice2.offsetHeight;
-      dice2.style.transform = ''; // Clear static transform
-      dice2.style.animation = 'rolling 1s linear infinite';
-    }
+  // State map
+  const diceMap = new Map(); // Element -> { container, cube }
+
+  function initDice(element) {
+    if (!element) return;
+    const objs = buildCubeDOM(element);
+    diceMap.set(element, objs);
+  }
+
+  // Create initial structure
+  initDice(dice1El);
+  initDice(dice2El);
+
+  // Rotation Logic
+  // To show face N, we rotate cube by:
+  // 1 (Back): X -180
+  // 2 (Top?): X -90  ( CSS says face 2 is X 90. To bring it front, we need X -90 )
+  // 3 (Right?): Y -90 ( CSS says face 3 is Y 90. To bring front, Y -90 )
+  // 4 (Left?): Y 90   ( CSS says face 4 is -90. To bring front, Y 90 )
+  // 5 (Bottom?): X 90 ( CSS says face 5 is -90. To bring front, X 90 )
+  // 6 (Front): 0
+  const targetRotations = {
+    1: { x: -180, y: 0 },
+    2: { x: -90, y: 0 },
+    3: { x: 0, y: -90 },
+    4: { x: 0, y: 90 },
+    5: { x: 90, y: 0 },
+    6: { x: 0, y: 0 }
   };
 
-  // Global function to stop animation and show result
-  window.showDiceResult = function (d1Value, d2Value) {
-    if (dice1) {
-      dice1.style.animation = 'none';
-      renderDice(dice1, d1Value);
-    }
-    if (dice2) {
-      dice2.style.animation = 'none';
-      renderDice(dice2, d2Value);
-    }
+  let isRolling = false;
+  let pendingDiceResult = null;
+  const MIN_ROLL_TIME = 550; // Match 0.5s CSS transition + 100ms hang time
+
+  window.animateDiceRoll = function () {
+    if (diceOverlay) diceOverlay.classList.add('visible');
+
+    isRolling = true;
+    pendingDiceResult = null; // Clear previous pending
+
+    diceMap.forEach(({ container, cube }) => {
+      // "Throw" animation: Add DiceInstance class to container
+      // This triggers the translateY up/down motion defined in CSS
+      container.classList.remove('DiceInstance'); // reset
+
+      // Use timeout to allow reset to frame
+      setTimeout(() => {
+        container.style.transition = 'transform 0.5s cubic-bezier(0.75, 0, 0.5, 1)';
+        container.classList.add('DiceInstance');
+
+        // Spin the cube wildly
+        // We'll set a high rotation value
+        const randX = 720 + Math.floor(Math.random() * 360);
+        const randY = 720 + Math.floor(Math.random() * 360);
+        cube.style.transition = 'transform 0.5s linear';
+        cube.style.transform = `rotateX(${randX}deg) rotateY(${randY}deg)`;
+      }, 10);
+    });
+
+    // Enforce minimum animation time
+    setTimeout(() => {
+      isRolling = false;
+      if (pendingDiceResult) {
+        // Result arrived while we were waiting, show it now
+        window.showDiceResult(pendingDiceResult.d1, pendingDiceResult.d2);
+        pendingDiceResult = null;
+      }
+    }, MIN_ROLL_TIME);
   };
+
+
+  window.showDiceResult = function (d1Value, d2Value) {
+    // If logic is still in "throw" phase, queue this result
+    if (isRolling) {
+      pendingDiceResult = { d1: d1Value, d2: d2Value };
+      return;
+    }
+
+    if (diceOverlay) diceOverlay.classList.add('visible'); // Ensure visible
+    const results = [{ el: dice1El, val: d1Value }, { el: dice2El, val: d2Value }];
+
+    results.forEach(({ el, val }) => {
+      const objs = diceMap.get(el);
+      if (!objs) return;
+      const { container, cube } = objs;
+
+      // "Land" the dice
+      container.classList.remove('DiceInstance');
+
+      // Calculate final rotation
+      const target = targetRotations[val] || { x: 0, y: 0 };
+
+      // Add multiple full spins to ensure it keeps spinning in same direction or settles nicely
+      // Current rotation?
+      // We want to land exactly on target. 
+      // We can just set it. The transition will handle interpolation.
+      // To avoid "unwinding", we might want to add 360 * N to the target relative to current?
+      // Simplified: Just set target. It might unwind but it's 1s transition.
+
+      // Let's add 2 spins (720) to target to ensure forward motion feel?
+      // Actually simplest matching Richup is just setting expectation.
+
+      // Richup CSS: .DiceCube { transition: 1s ... }
+
+      cube.style.transition = 'transform 1s cubic-bezier(0, 0, 0, 1)'; // deceleration
+
+      // Optimization: if we are at 700deg, and target is 0, it will spin BACK 700deg.
+      // We want it to go to 720 (which is 0).
+      // So we should normalize or round up to nearest multiple + offset?
+
+      // For now, let's keep it simple.
+      cube.style.transform = `rotateX(${target.x}deg) rotateY(${target.y}deg)`;
+    });
+  };
+
+  // Force visibility on load
+  if (diceOverlay) diceOverlay.classList.add('visible');
+
 })();
