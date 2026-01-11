@@ -23,3 +23,5 @@ build/
 
 server/*.db
 server/data
+server/data/onlypoly.db
+*.db
