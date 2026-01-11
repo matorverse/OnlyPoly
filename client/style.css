@@ -346,6 +346,10 @@ h4,
   color: var(--accent-gold);
 }
 
+.DiceFace[data-side="6"] .DiceDot:nth-child(3) {
+  grid-area: four;
+}
+
 .DiceFace[data-side="6"] .DiceDot:nth-child(4) {
   grid-area: six;
 }
