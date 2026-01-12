@@ -249,7 +249,7 @@ io.on('connection', async (socket) => {
     if (!ensureReady(socket)) return;
     if (!playerId) return;
     const s = Number(step);
-    const amount = s === 2 || s === 10 || s === 100 ? s : null;
+    const amount = s === 10 || s === 50 || s === 100 ? s : null;
     if (!amount) {
       socket.emit('action_rejected', { reason: 'invalid_bid_step' });
       return;

@@ -510,7 +510,7 @@
   }
 
   function showAuctionModal() {
-    auctionModal.classList.remove('hidden');
+    auctionModal.classList.add('visible');
     renderAuction();
     if (auctionInterval) clearInterval(auctionInterval);
     auctionInterval = setInterval(() => {
@@ -519,7 +519,7 @@
   }
 
   function hideAuctionModal() {
-    auctionModal.classList.add('hidden');
+    auctionModal.classList.remove('visible');
     if (auctionInterval) clearInterval(auctionInterval);
     auctionInterval = null;
     currentAuction = null;
