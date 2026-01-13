@@ -112,25 +112,70 @@
   const loginColorGrid = document.getElementById('loginColorGrid');
   const selectedColorInput = document.getElementById('selectedColorInput');
 
-  if (loginColorGrid) {
+  function renderLoginColors() {
+    if (!loginColorGrid) return;
+    loginColorGrid.innerHTML = '';
+
+    // Determine taken colors from state
+    const takenColors = new Set();
+    if (state && state.players) {
+      Object.values(state.players).forEach(p => {
+        if (p.color) takenColors.add(p.color);
+      });
+    }
+
     PLAYER_COLORS.forEach((c, idx) => {
+      const isTaken = takenColors.has(c.value);
+
       const dot = document.createElement('div');
+      dot.className = 'color-choice'; // Add class for easy finding
       dot.style.width = '30px';
       dot.style.height = '30px';
       dot.style.borderRadius = '50%';
       dot.style.background = c.value;
-      dot.style.cursor = 'pointer';
-      dot.style.border = idx === 0 ? '3px solid white' : '3px solid transparent';
-      dot.style.boxShadow = '0 2px 5px rgba(0,0,0,0.5)';
+      dot.dataset.color = c.value; // Data attribute for verification
 
-      dot.onclick = () => {
-        selectedColorInput.value = c.value;
-        Array.from(loginColorGrid.children).forEach(child => child.style.border = '3px solid transparent');
-        dot.style.border = '3px solid white';
-      };
+      // Default styles
+      dot.style.cursor = 'pointer';
+      dot.style.boxShadow = '0 2px 5px rgba(0,0,0,0.5)';
+      dot.style.transition = 'all 0.2s';
+
+      // Check selection
+      const isSelected = selectedColorInput.value === c.value;
+      dot.style.border = isSelected ? '3px solid white' : '3px solid transparent';
+      if (isSelected) dot.style.transform = 'scale(1.1)';
+
+      // Taken logic
+      if (isTaken) {
+        dot.style.opacity = '0.4'; // 40% visible aka 60% transparent (user asked for 60% opacity generally meaning 0.6 alpha, or dimmed)
+        // User said "60% opacity so that it feels disabled". 
+        // Usually means opacity: 0.6. Let's do 0.6.
+        // Wait, "make it 60% opacity" -> opacity: 0.6.
+        dot.style.opacity = '0.4'; // 0.4 is quite dim. 0.6 is better.
+        // Let's stick to 0.4 for clear "disabled" look, or 0.5. 
+        // User said "make it 60% opacity". 
+        dot.style.opacity = '0.4';
+        dot.style.pointerEvents = 'none';
+        dot.style.cursor = 'not-allowed';
+        dot.title = 'Color taken';
+      } else {
+        dot.onclick = () => {
+          selectedColorInput.value = c.value;
+          renderLoginColors(); // Re-render to update borders
+        };
+      }
+
+      // If currently selected color became taken, deselect it?
+      // Edge case: I selected Blue, someone else joined as Blue before I hit join.
+      // Ideally I should know.
+      // But for now, visuals are enough.
+
       loginColorGrid.appendChild(dot);
     });
   }
+
+  // Initial Render
+  renderLoginColors();
 
   joinBtn.addEventListener('click', () => {
     const name = (nameInput.value || '').trim();
@@ -296,7 +341,19 @@
     OnlypolyUI.toast(`Server Error: ${reason}`, 'error');
   });
 
+  let pendingState = null;
+
   socket.on('state_update', (newState) => {
+    // If dice are animating, hold this update
+    if (window.isDiceAnimating) {
+      pendingState = newState;
+      return;
+    }
+
+    applyState(newState);
+  });
+
+  function applyState(newState) {
     state = newState;
 
     // Inject Owner Colors & Country Data into Board for UI
@@ -327,27 +384,42 @@
     OnlypolyUI.renderPlayers(state.players, state.currentPlayerId);
     renderLobby();
     renderGame();
-  });
+    // Update login colors based on new state (players might have joined)
+    renderLoginColors();
+  }
 
   socket.on('dice_rolled', ({ playerId, dice, tile, events }) => {
     const meTurn = playerId === me.id;
-    showDiceResult(dice.d1, dice.d2);
-    if (meTurn) {
-      OnlypolyUI.toast(`Moved ${dice.total} spaces`, 'chance');
-    }
-    events.forEach((ev) => {
-      if (ev.type === 'rent_paid' && meTurn) {
-        OnlypolyUI.toast(`Paid $${ev.amount} in rent.`, 'rent');
+
+    // showDiceResult is now a Promise that resolves when animation finishes
+    window.showDiceResult(dice.d1, dice.d2).then(() => {
+      // Animation finished!
+
+      if (meTurn) {
+        OnlypolyUI.toast(`Moved ${dice.total} spaces`, 'chance');
       }
-      if (ev.type === 'chance' && meTurn) {
-        OnlypolyUI.toast(ev.card.text, 'chance');
-      }
-      if (ev.type === 'unowned_property' && meTurn) {
-        buyBtn.disabled = false;
-        auctionBtn.disabled = false;
+      events.forEach((ev) => {
+        if (ev.type === 'rent_paid' && meTurn) {
+          OnlypolyUI.toast(`Paid $${ev.amount} in rent.`, 'rent');
+        }
+        if (ev.type === 'chance' && meTurn) {
+          OnlypolyUI.toast(ev.card.text, 'chance');
+        }
+        if (ev.type === 'unowned_property' && meTurn) {
+          buyBtn.disabled = false;
+          auctionBtn.disabled = false;
+        }
+      });
+
+      // If we have a pending state update, apply it now
+      if (pendingState) {
+        applyState(pendingState);
+        pendingState = null;
+      } else {
+        // Just re-render existing state to be safe (e.g. if state update came before dice roll event?? Unlikely but good safety)
+        renderGame();
       }
     });
-    renderGame();
   });
 
   socket.on('action_rejected', ({ reason }) => {

@@ -1568,3 +1568,27 @@ h4,
     margin-bottom: 15px;
   }
 }
+
+/* --- PLAYER TOKENS --- */
+/* --- PLAYER TOKENS --- */
+.player-token {
+  position: absolute;
+  width: 24px;
+  /* Standard size */
+  height: 24px;
+  border-radius: 50%;
+  /* Circle */
+  transform: translate(-50%, -50%);
+  /* Center on the coordinate */
+  pointer-events: none;
+  /* Let clicks pass through to tiles */
+  transition: top 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), left 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.3s;
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  /* Subtle shadow for depth */
+}
+
+/* Removed .token-svg as it is no longer used */

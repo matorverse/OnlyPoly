@@ -201,8 +201,18 @@ window.OnlypolyUI = (function () {
       if (!token) {
         token = document.createElement('div');
         token.className = 'player-token';
-        token.style.background = `radial-gradient(circle at 30% 30%, ${p.color}, #000)`;
-        // Add initial letter?
+        // Simple circle: Solid color
+        token.style.backgroundColor = p.color;
+        // Lighter border: we can simulate this with a white semi-transparent border 
+        // that overlays the dark background or just stands out.
+        // User requested "lighter shade". 
+        // A simple way is a border that is same hue but lighter. 
+        // Since we don't have color manipulation libs easily, 
+        // we'll use a white border with opacity which blends to look lighter 
+        // or just a solid white border which is the ultimate "lighter shade".
+        // Let's try 3px solid rgba(255,255,255,0.5) for a "lighter" look.
+        token.style.border = `3px solid rgba(255,255,255,0.5)`;
+
         token.title = p.name;
         boardEl.appendChild(token);
         tokenElements.set(p.id, token);
@@ -232,12 +242,10 @@ window.OnlypolyUI = (function () {
       token.style.top = `calc(${xy.y}% + ${oy}%)`;
 
       if (p.id === currentPlayerId) {
-        token.style.boxShadow = `0 0 10px 2px ${p.color}, 0 0 20px ${p.color}`;
         token.style.zIndex = 150;  // Active player above all tiles
-        token.style.transform = 'scale(1.3)';
+        token.style.transform = 'scale(1.2)'; // Just scale up, no pop/bounce/glow
       } else {
-        token.style.boxShadow = `0 2px 5px rgba(0,0,0,0.5)`;
-        token.style.zIndex = 120;  // Normal tokens above tiles
+        token.style.zIndex = 120;
         token.style.transform = 'scale(1)';
       }
     });

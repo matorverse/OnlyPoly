@@ -64,33 +64,39 @@ io.on('connection', async (socket) => {
 
   // 1. Session Recovery Logic
   const sessionId = socket.handshake.auth.sessionId;
-  if (sessionId && gameState) {
-    try {
-      const playerRecord = await DB.getPlayer(sessionId);
-      if (playerRecord) {
-        const restored = gameState.reconnectPlayer(sessionId, socket.id);
-        if (restored) {
-          playerId = sessionId;
-          console.log(`[Session] Restored player ${playerRecord.name} (${playerId})`);
-          socket.emit('session_restored', {
-            playerId,
-            name: playerRecord.name,
-            token: playerRecord.token,
-            hostId: gameState.hostId
-          });
-          socket.emit('state_update', gameState.serialize());
+  if (gameState) {
+    // ALWAYS emit state update on connect so login screen can show taken colors
+    socket.emit('state_update', gameState.serialize());
+
+    if (sessionId) {
+      try {
+        const playerRecord = await DB.getPlayer(sessionId);
+        if (playerRecord) {
+          const restored = gameState.reconnectPlayer(sessionId, socket.id);
+          if (restored) {
+            playerId = sessionId;
+            console.log(`[Session] Restored player ${playerRecord.name} (${playerId})`);
+            socket.emit('session_restored', {
+              playerId,
+              name: playerRecord.name,
+              token: playerRecord.token,
+              hostId: gameState.hostId
+            });
+            // State update already sent above, but sending again after recover is fine/safer
+            socket.emit('state_update', gameState.serialize());
+          } else {
+            socket.emit('session_invalid');
+          }
         } else {
           socket.emit('session_invalid');
         }
-      } else {
-        socket.emit('session_invalid');
+      } catch (err) {
+        console.error('Session check error:', err);
       }
-    } catch (err) {
-      console.error('Session check error:', err);
     }
   }
 
-  socket.on('join_lobby', ({ name, existingId }) => {
+  socket.on('join_lobby', ({ name, color, existingId }) => {
     if (!ensureReady(socket)) return;
     if (!name || typeof name !== 'string') return;
 
@@ -98,14 +104,34 @@ io.on('connection', async (socket) => {
     // (fallback for clients that don't support auth handshake yet?)
     const id = existingId || socket.id;
 
+    // Check if color is available if provided
+    if (color && typeof color === 'string') {
+      const isTaken = Object.values(gameState.players).some(p => p.color === color && p.id !== id);
+      if (isTaken) {
+        socket.emit('color_rejected', { reason: 'color_taken' });
+        // Should we abort join? 
+        // The client might just want to know. 
+        // If we abort, the user stays on login screen.
+        // Let's abort only if color was explicitly requested, OR we can join them without color and let them pick.
+        // The prompt says "color should be the color chosen while entering game".
+        // So if they picked a taken color, they should pick another.
+        return;
+      }
+    }
+
     // logic...
     const token = generateToken();
-    const player = gameState.addPlayer(id, name.slice(0, 16), socket.id, token);
+    // Pass color to addPlayer if your gameState supports it, or set it after
+    const player = gameState.addPlayer(id, name.slice(0, 16), socket.id, token, color);
 
     if (!player) {
       if (gameState.players[id]) {
         playerId = id;
         gameState.reconnectPlayer(id, socket.id);
+        // If they sent a new color on reconnect, try to update it if not started
+        if (color && !gameState.started) {
+          gameState.setPlayerColor(id, color);
+        }
         socket.emit('joined', { playerId: id, token, hostId: gameState.hostId });
         io.emit('state_update', gameState.serialize());
         return;
