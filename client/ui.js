@@ -35,7 +35,10 @@ window.OnlypolyUI = (function () {
 
 
   function renderBoard() {
-    boardEl.innerHTML = '';
+    // CRITICAL FIX: Don't use innerHTML = '' as it destroys player tokens
+    // Instead, selectively remove only tiles and board-center
+    const tilesToRemove = boardEl.querySelectorAll('.tile, .board-center');
+    tilesToRemove.forEach(tile => tile.remove());
 
     // Add Center Logo
     const center = document.createElement('div');
@@ -230,11 +233,11 @@ window.OnlypolyUI = (function () {
 
       if (p.id === currentPlayerId) {
         token.style.boxShadow = `0 0 10px 2px ${p.color}, 0 0 20px ${p.color}`;
-        token.style.zIndex = 20;
+        token.style.zIndex = 150;  // Active player above all tiles
         token.style.transform = 'scale(1.3)';
       } else {
         token.style.boxShadow = `0 2px 5px rgba(0,0,0,0.5)`;
-        token.style.zIndex = 10;
+        token.style.zIndex = 120;  // Normal tokens above tiles
         token.style.transform = 'scale(1)';
       }
     });
