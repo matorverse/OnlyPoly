@@ -100,10 +100,13 @@
   let pendingDiceResult = null;
   const MIN_ROLL_TIME = 550; // Match 0.5s CSS transition + 100ms hang time
 
+  window.isDiceAnimating = false;
+
   window.animateDiceRoll = function () {
     if (diceOverlay) diceOverlay.classList.add('visible');
 
     isRolling = true;
+    window.isDiceAnimating = true; // Flag for external sync
     pendingDiceResult = null; // Clear previous pending
 
     diceMap.forEach(({ container, cube }) => {
@@ -130,55 +133,66 @@
       isRolling = false;
       if (pendingDiceResult) {
         // Result arrived while we were waiting, show it now
-        window.showDiceResult(pendingDiceResult.d1, pendingDiceResult.d2);
+        // Note: We don't await this here as connection handles it, 
+        // but strictly we should. However, the external caller (game.js)
+        // will call showDiceResult again usually or we handle it here.
+        // If pendingDiceResult is set, it means game.js called showDiceResult
+        // which returned a promise that is waiting on 'isRolling' to flip.
+        // Actually, let's keep it simple: if game.js called showDiceResult, 
+        // it checked isRolling.
+        
+        // If we have pending result, we execute the "Landing" logic.
+        // But showDiceResult needs to return the promise to the ORIGINAL caller.
+        // The original caller is waiting on the promise returned when it called showDiceResult(val).
+        // So we need to process that resolve logic.
+        // We'll handle this by triggering the deferred function if we had one.
+        if (pendingDiceResult.resolve) {
+             doShowResult(pendingDiceResult.d1, pendingDiceResult.d2)
+                 .then(pendingDiceResult.resolve);
+        }
         pendingDiceResult = null;
       }
     }, MIN_ROLL_TIME);
   };
 
+  function doShowResult(d1Value, d2Value) {
+      return new Promise((resolve) => {
+        if (diceOverlay) diceOverlay.classList.add('visible'); // Ensure visible
+        const results = [{ el: dice1El, val: d1Value }, { el: dice2El, val: d2Value }];
+    
+        results.forEach(({ el, val }) => {
+          const objs = diceMap.get(el);
+          if (!objs) return;
+          const { container, cube } = objs;
+    
+          // "Land" the dice
+          container.classList.remove('DiceInstance');
+    
+          // Calculate final rotation
+          const target = targetRotations[val] || { x: 0, y: 0 };
+    
+          // Richup CSS: .DiceCube { transition: 1s ... }
+          cube.style.transition = 'transform 1s cubic-bezier(0, 0, 0, 1)'; // deceleration
+          cube.style.transform = `rotateX(${target.x}deg) rotateY(${target.y}deg)`;
+        });
+
+        // Resolve after landing transition (1s)
+        setTimeout(() => {
+            window.isDiceAnimating = false;
+            resolve();
+        }, 1100); // 1s + buffer
+      });
+  }
 
   window.showDiceResult = function (d1Value, d2Value) {
     // If logic is still in "throw" phase, queue this result
     if (isRolling) {
-      pendingDiceResult = { d1: d1Value, d2: d2Value };
-      return;
+      return new Promise((resolve) => {
+          pendingDiceResult = { d1: d1Value, d2: d2Value, resolve };
+      });
     }
 
-    if (diceOverlay) diceOverlay.classList.add('visible'); // Ensure visible
-    const results = [{ el: dice1El, val: d1Value }, { el: dice2El, val: d2Value }];
-
-    results.forEach(({ el, val }) => {
-      const objs = diceMap.get(el);
-      if (!objs) return;
-      const { container, cube } = objs;
-
-      // "Land" the dice
-      container.classList.remove('DiceInstance');
-
-      // Calculate final rotation
-      const target = targetRotations[val] || { x: 0, y: 0 };
-
-      // Add multiple full spins to ensure it keeps spinning in same direction or settles nicely
-      // Current rotation?
-      // We want to land exactly on target. 
-      // We can just set it. The transition will handle interpolation.
-      // To avoid "unwinding", we might want to add 360 * N to the target relative to current?
-      // Simplified: Just set target. It might unwind but it's 1s transition.
-
-      // Let's add 2 spins (720) to target to ensure forward motion feel?
-      // Actually simplest matching Richup is just setting expectation.
-
-      // Richup CSS: .DiceCube { transition: 1s ... }
-
-      cube.style.transition = 'transform 1s cubic-bezier(0, 0, 0, 1)'; // deceleration
-
-      // Optimization: if we are at 700deg, and target is 0, it will spin BACK 700deg.
-      // We want it to go to 720 (which is 0).
-      // So we should normalize or round up to nearest multiple + offset?
-
-      // For now, let's keep it simple.
-      cube.style.transform = `rotateX(${target.x}deg) rotateY(${target.y}deg)`;
-    });
+    return doShowResult(d1Value, d2Value);
   };
 
   // Force visibility on load
