@@ -1526,4 +1526,44 @@ h4,
   .tile:hover .flag-badge {
     opacity: 0.28;
   }
+
+  /* Auction Modal Mobile Responsiveness */
+  .modal-content {
+    padding: 20px 15px;
+    width: 95%;
+    max-width: 95%;
+  }
+
+  .auction-info {
+    font-size: 1em;
+    padding: 12px;
+    margin: 15px 0 !important;
+  }
+
+  .auction-bid-row {
+    display: flex;
+    gap: 8px !important;
+    justify-content: center;
+    flex-wrap: nowrap;
+    width: 100%;
+    margin: 15px 0 !important;
+  }
+
+  .auction-bid-row .bid {
+    min-width: 0;
+    flex: 1;
+    font-size: 0.95em;
+    padding: 0.7em 0.5em;
+    white-space: nowrap;
+  }
+
+  .auction-timer {
+    font-size: 1.2em;
+    margin-top: 12px !important;
+  }
+
+  .modal-content h2 {
+    font-size: 1.5rem;
+    margin-bottom: 15px;
+  }
 }
