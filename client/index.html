@@ -194,8 +194,16 @@
     const gameControls = document.getElementById('gameControls');
     const loginModal = document.getElementById('loginModal');
 
+    // Flag to prevent false positive on initial page load
+    let hasInitialized = false;
+
     // Observer to detect when game.js hides the login/lobby
     const observer = new MutationObserver(() => {
+      // Skip the first few mutations that happen during page load
+      if (!hasInitialized) {
+        return;
+      }
+
       if (lobbyPanel.hidden || lobbyPanel.style.display === 'none') {
         // Game Started (or Login)
         if (!gamePanel.hidden && gamePanel.style.display !== 'none') {
@@ -214,6 +222,12 @@
 
     observer.observe(lobbyPanel, { attributes: true, attributeFilter: ['hidden', 'style', 'class'] });
     observer.observe(gamePanel, { attributes: true, attributeFilter: ['hidden', 'style', 'class'] });
+
+    // Set initialization flag after a short delay to allow page to fully load
+    // This prevents the observer from acting on the initial dummy element states
+    setTimeout(() => {
+      hasInitialized = true;
+    }, 100);
 
   </script>
 </body>
