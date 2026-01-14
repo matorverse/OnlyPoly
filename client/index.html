@@ -70,6 +70,7 @@
           </div>
           <div style="display: flex; gap: 10px; margin-top: 10px;">
             <button id="propertiesBtn" class="btn-richup secondary" style="flex: 1;">Properties</button>
+            <button id="playersBtn" class="btn-richup secondary" style="flex: 1;">Info</button>
           </div>
           <div style="display: flex; gap: 10px; margin-top: 10px;">
             <button id="bankruptBtn" class="btn-richup secondary"
@@ -130,6 +131,16 @@
         <h2 class="font-richup">My Properties</h2>
         <div id="propertiesContent" class="properties-content"></div>
         <button onclick="document.getElementById('propertiesModal').classList.remove('visible')"
+          class="btn-richup secondary" style="margin-top: 20px;">Close</button>
+      </div>
+    </div>
+
+    <!-- Players Modal (NEW) -->
+    <div id="playersModal" class="modal-overlay">
+      <div class="modal-content" style="width: 500px; max-width: 90%;">
+        <h2 class="font-richup">Players</h2>
+        <div id="playersContent" class="players-content"></div>
+        <button onclick="document.getElementById('playersModal').classList.remove('visible')"
           class="btn-richup secondary" style="margin-top: 20px;">Close</button>
       </div>
     </div>

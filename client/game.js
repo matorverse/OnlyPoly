@@ -49,6 +49,9 @@
   const propertiesModal = document.getElementById('propertiesModal');
   const propertiesContent = document.getElementById('propertiesContent');
 
+  const playersModal = document.getElementById('playersModal');
+  const playersContent = document.getElementById('playersContent');
+
   const bankruptBtn = document.getElementById('bankruptBtn');
   const bankruptModal = document.getElementById('bankruptModal');
   const confirmBankruptBtn = document.getElementById('confirmBankruptBtn');
@@ -253,6 +256,10 @@
 
   propertiesBtn?.addEventListener('click', () => {
     openPropertiesModal();
+  });
+
+  playersBtn?.addEventListener('click', () => {
+    openPlayersModal();
   });
 
   bankruptBtn?.addEventListener('click', () => {
@@ -1411,6 +1418,89 @@
     propertiesContent.appendChild(grid);
   }
 
+  function openPlayersModal() {
+    if (!state) return;
+
+    playersModal.classList.add('visible');
+    playersContent.innerHTML = '';
+
+    const allPlayers = Object.values(state.players || {});
+
+    if (allPlayers.length === 0) {
+      playersContent.innerHTML = '<div style="padding: 40px; text-align: center; color: #888;">No players in game.</div>';
+      return;
+    }
+
+    // Sort by turn order or alphabetically
+    allPlayers.sort((a, b) => {
+      if (a.id === state.currentPlayerId) return -1;
+      if (b.id === state.currentPlayerId) return 1;
+      return 0;
+    });
+
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display: flex; flex-direction: column; gap: 12px;';
+
+    allPlayers.forEach(player => {
+      const card = document.createElement('div');
+      card.style.cssText = `
+        padding: 15px;
+        border-radius: 8px;
+        background: rgba(102, 71, 224, 0.15);
+        border: 2px solid ${player.color || '#6647e0'};
+        ${player.id === state.currentPlayerId ? 'box-shadow: 0 0 15px rgba(102, 71, 224, 0.5);' : ''}
+      `;
+
+      // Player name and status
+      const header = document.createElement('div');
+      header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
+
+      const name = document.createElement('div');
+      name.style.cssText = `font-size: 1.2rem; font-weight: bold; color: ${player.color || '#fff'};`;
+      name.textContent = player.name + (player.id === state.currentPlayerId ? ' 🎲' : '');
+
+      const status = document.createElement('div');
+      status.style.cssText = 'font-size: 0.85rem; color: #aaa;';
+      if (player.bankrupt) {
+        status.textContent = '💀 Bankrupt';
+        status.style.color = '#e74c3c';
+      } else if (player.inJail) {
+        status.textContent = `🔒 In Jail (${player.jailTurns} turns)`;
+        status.style.color = '#ff9800';
+      } else {
+        status.textContent = '✓ Active';
+        status.style.color = '#2ecc71';
+      }
+
+      header.appendChild(name);
+      header.appendChild(status);
+      card.appendChild(header);
+
+      // Money display
+      const money = document.createElement('div');
+      money.style.cssText = 'font-size: 1.5rem; font-weight: bold; color: #2ecc71; margin-bottom: 8px;';
+      money.textContent = `$${player.money}`;
+      card.appendChild(money);
+
+      // Properties count
+      const propsCount = Object.keys(player.ownedProperties || {}).length;
+      const props = document.createElement('div');
+      props.style.cssText = 'font-size: 0.9rem; color: #ccc;';
+      props.textContent = `${propsCount} ${propsCount === 1 ? 'property' : 'properties'} owned`;
+      card.appendChild(props);
+
+      // Position
+      const position = document.createElement('div');
+      position.style.cssText = 'font-size: 0.85rem; color: #888; margin-top: 5px;';
+      position.textContent = `Position: Tile ${player.position}`;
+      card.appendChild(position);
+
+      grid.appendChild(card);
+    });
+
+    playersContent.appendChild(grid);
+  }
+
   // Helper function to check monopoly
   function checkMonopoly(player, country) {
     if (!country || !state || !state.board) return false;
@@ -1426,6 +1516,12 @@
   propertiesModal?.addEventListener('click', (e) => {
     if (e.target === propertiesModal || e.target.classList.contains('modal-backdrop')) {
       propertiesModal.classList.remove('visible');
+    }
+  });
+
+  playersModal?.addEventListener('click', (e) => {
+    if (e.target === playersModal || e.target.classList.contains('modal-backdrop')) {
+      playersModal.classList.remove('visible');
     }
   });
 
