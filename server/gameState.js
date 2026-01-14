@@ -553,6 +553,28 @@ class GameState {
         this.turnOrder = this.turnOrder.filter(id => id !== playerId);
         this.io.emit('player_bankrupt', { playerId });
         this.persist();
+
+        // Check for winner (only 1 active player left)
+        const activePlayers = this.turnOrder.filter(id => {
+          const player = this.players[id];
+          return player && !player.bankrupt;
+        });
+
+        if (activePlayers.length === 1) {
+          // Game Over - We have a winner!
+          const winnerId = activePlayers[0];
+          const winner = this.players[winnerId];
+
+          console.log(`Game Over! Winner: ${winner.name} (${winnerId})`);
+
+          this.io.emit('game_over', {
+            winnerId,
+            winnerName: winner.name,
+            winnerColor: winner.color,
+            winnerMoney: winner.money,
+            winnerProperties: Object.keys(winner.ownedProperties || {}).length
+          });
+        }
       }
     }
   }

@@ -490,6 +490,28 @@ io.on('connection', async (socket) => {
     // Notify all players
     io.emit('player_bankrupt', { playerId, playerName: player.name });
     io.emit('state_update', gameState.serialize());
+
+    // Check for winner (only 1 active player left)
+    const activePlayers = gameState.turnOrder.filter(id => {
+      const p = gameState.players[id];
+      return p && !p.bankrupt;
+    });
+
+    if (activePlayers.length === 1) {
+      // Game Over - We have a winner!
+      const winnerId = activePlayers[0];
+      const winner = gameState.players[winnerId];
+
+      console.log(`Game Over! Winner: ${winner.name} (${winnerId})`);
+
+      io.emit('game_over', {
+        winnerId,
+        winnerName: winner.name,
+        winnerColor: winner.color,
+        winnerMoney: winner.money,
+        winnerProperties: Object.keys(winner.ownedProperties || {}).length
+      });
+    }
   });
 
   socket.on('disconnect', () => {

@@ -1592,3 +1592,51 @@ h4,
 }
 
 /* Removed .token-svg as it is no longer used */
+
+/* Victory Screen Styles */
+.victory-screen {
+  background: linear-gradient(135deg, #2b2341 0%, #1a1528 100%);
+  border: 3px solid #f1c40f;
+  box-shadow: 0 0 30px rgba(241, 196, 15, 0.5);
+}
+
+.victory-animation {
+  font-size: 8rem;
+  animation: bounce 1s ease-in-out infinite;
+  margin: 20px 0;
+}
+
+@keyframes bounce {
+
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-30px) scale(1.1);
+  }
+}
+
+.victory-title {
+  font-size: 4rem;
+  color: #f1c40f;
+  text-shadow: 0 0 20px rgba(241, 196, 15, 0.8), 0 0 40px rgba(241, 196, 15, 0.5);
+  animation: glow 2s ease-in-out infinite;
+  margin: 20px 0;
+  letter-spacing: 0.1em;
+}
+
+@keyframes glow {
+
+  0%,
+  100% {
+    opacity: 1;
+    text-shadow: 0 0 20px rgba(241, 196, 15, 0.8), 0 0 40px rgba(241, 196, 15, 0.5);
+  }
+
+  50% {
+    opacity: 0.8;
+    text-shadow: 0 0 30px rgba(241, 196, 15, 1), 0 0 60px rgba(241, 196, 15, 0.7);
+  }
+}

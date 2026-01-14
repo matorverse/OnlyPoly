@@ -486,6 +486,35 @@
     }
   });
 
+  socket.on('game_over', ({ winnerId, winnerName, winnerColor, winnerMoney, winnerProperties }) => {
+    const victoryModal = document.getElementById('victoryModal');
+    const victoryContent = document.getElementById('victoryContent');
+
+    if (!victoryModal || !victoryContent) return;
+
+    victoryContent.innerHTML = `
+      <h2 style="color: ${winnerColor}; font-size: 2.5rem; margin: 20px 0; font-weight: bold;">
+        ${winnerName}
+      </h2>
+      <div style="font-size: 1.2rem; color: #ccc; margin: 15px 0; line-height: 1.8;">
+        <div style="margin: 10px 0;">💰 Final Money: <span style="color: #2ecc71; font-weight: bold;">$${winnerMoney}</span></div>
+        <div style="margin: 10px 0;">🏠 Properties Owned: <span style="color: #6647e0; font-weight: bold;">${winnerProperties}</span></div>
+      </div>
+      <p style="color: #888; margin-top: 20px; font-size: 1.1rem;">
+        🎉 All other players have been eliminated! 🎉
+      </p>
+    `;
+
+    victoryModal.classList.add('visible');
+
+    // Show toast for all players
+    if (winnerId === me.id) {
+      OnlypolyUI.toast('🏆 You won the game! Congratulations!', 'chance');
+    } else {
+      OnlypolyUI.toast(`🏆 ${winnerName} won the game!`, 'info');
+    }
+  });
+
   socket.on('jail_turn_skipped', ({ playerId, playerName, turnsRemaining }) => {
     if (playerId === me.id) {
       OnlypolyUI.toast(`You are in jail. ${turnsRemaining} turn${turnsRemaining !== 1 ? 's' : ''} remaining.`, 'rent');
