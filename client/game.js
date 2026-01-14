@@ -369,8 +369,13 @@
         });
         if (owner) {
           tile.ownerColor = owner.color;
+          // Add development data (houses/hotel) for visual display
+          if (owner.ownedProperties[tile.id]) {
+            tile.development = owner.ownedProperties[tile.id];
+          }
         } else {
           tile.ownerColor = null;
+          tile.development = null;
         }
         // Mock Country if missing (for testing flags)
         // In real app, this should come from DB/Server
@@ -428,10 +433,17 @@
       'must_roll_first': 'You must roll dice before ending turn.',
       'already_bought': 'Action not available.',
       'not_your_turn': 'It is not your turn.',
-      'insufficient_funds': 'Insufficient funds.'
+      'insufficient_funds': 'Insufficient funds.',
+      'no_monopoly': 'You need to own all properties in this country to build.',
+      'cannot_build': 'Cannot build on this property.',
+      'cannot_sell': 'Cannot sell buildings on this property.'
     };
     OnlypolyUI.toast(map[reason] || 'Action rejected.', 'rent');
     renderGame();
+    // Refresh properties modal if open
+    if (propertiesModal && propertiesModal.classList.contains('visible')) {
+      openPropertiesModal();
+    }
   });
 
   socket.on('auction_started', (auction) => {
@@ -464,6 +476,22 @@
     } else {
       const p = state.players[playerId];
       if (p) OnlypolyUI.toast(`${p.name} went bankrupt.`, 'info');
+    }
+  });
+
+  socket.on('jail_turn_skipped', ({ playerId, playerName, turnsRemaining }) => {
+    if (playerId === me.id) {
+      OnlypolyUI.toast(`You are in jail. ${turnsRemaining} turn${turnsRemaining !== 1 ? 's' : ''} remaining.`, 'rent');
+    } else {
+      OnlypolyUI.toast(`${playerName} is in jail (${turnsRemaining} turn${turnsRemaining !== 1 ? 's' : ''} left).`, 'info');
+    }
+  });
+
+  socket.on('jail_paid', ({ playerId, playerName }) => {
+    if (playerId === me.id) {
+      OnlypolyUI.toast('You paid $100 to get out of jail. You cannot move this turn.', 'chance');
+    } else {
+      OnlypolyUI.toast(`${playerName} paid to get out of jail.`, 'info');
     }
   });
 
@@ -531,8 +559,14 @@
     }
 
     if (current) {
-      turnLabel.textContent =
-        current.id === me.id ? 'Your turn' : `${current.name}'s turn`;
+      // Show jail status in turn label
+      if (current.inJail) {
+        turnLabel.textContent = current.id === me.id
+          ? `Your turn (In Jail - ${current.jailTurns} turn${current.jailTurns !== 1 ? 's' : ''} left)`
+          : `${current.name}'s turn (In Jail)`;
+      } else {
+        turnLabel.textContent = current.id === me.id ? 'Your turn' : `${current.name}'s turn`;
+      }
     }
 
     if (myPlayer) {
@@ -544,10 +578,23 @@
     const hasRolled = state.hasRolledThisTurn || false;
     const hasBought = state.hasBoughtThisTurn || false;
     const hasAuction = state.hasStartedAuctionThisTurn || false;
+    const paidJail = state.paidJailThisTurn || false;
+    const inJail = myPlayer?.inJail || false;
 
-    rollBtn.disabled = !isMyTurn || hasRolled;
-    rollBtn.textContent = hasRolled ? 'Rolled' : 'Roll';
-    endTurnBtn.disabled = !isMyTurn || (!hasRolled && !myPlayer?.inJail);
+    // Disable roll if: not my turn, already rolled, in jail, or just paid jail fine
+    rollBtn.disabled = !isMyTurn || hasRolled || inJail || paidJail;
+    if (inJail) {
+      rollBtn.textContent = 'In Jail';
+    } else if (paidJail) {
+      rollBtn.textContent = 'Paid Jail';
+    } else if (hasRolled) {
+      rollBtn.textContent = 'Rolled';
+    } else {
+      rollBtn.textContent = 'Roll';
+    }
+
+    // Can end turn if: my turn AND (rolled OR in jail)
+    endTurnBtn.disabled = !isMyTurn || (!hasRolled && !inJail);
 
     const canBuyOrAuctionBase = isMyTurn && hasRolled && !hasBought && !hasAuction;
     let canBuyOrAuction = canBuyOrAuctionBase;
@@ -570,7 +617,10 @@
 
     buyBtn.disabled = !canBuyOrAuction;
     auctionBtn.disabled = !canBuyOrAuction;
-    payJailBtn.disabled = !isMyTurn || !myPlayer?.inJail;
+
+    // Pay jail button: enabled only if in jail, my turn, and have $100
+    payJailBtn.disabled = !isMyTurn || !inJail || (myPlayer?.money || 0) < 100;
+
     tradeBtn.disabled = false;
     propertiesBtn.disabled = false;
     bankruptBtn.disabled = false;
@@ -1205,6 +1255,9 @@
       const tile = state.board.find(t => t.id === Number(pid));
       if (!tile) return;
 
+      // Only show build/sell for properties (not airports/utilities)
+      const isProperty = tile.type === 'property';
+
       const card = document.createElement('div');
       card.className = 'property-display-card';
 
@@ -1244,10 +1297,130 @@
       value.textContent = `₩${tile.price || 0}`;
       card.appendChild(value);
 
+      // Build/Sell controls (only for properties)
+      if (isProperty) {
+        const hasMonopoly = checkMonopoly(myPlayer, tile.country);
+        const housePrice = tile.housePrice || 0;
+        const hotelPrice = tile.hotelPrice || 0;
+        const houseSellPrice = Math.floor(housePrice * 0.5);
+        const hotelSellPrice = Math.floor(hotelPrice * 0.5);
+
+        // Build/Sell container
+        const controls = document.createElement('div');
+        controls.style.cssText = 'margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);';
+
+        // Monopoly indicator
+        if (!hasMonopoly) {
+          const monopolyMsg = document.createElement('div');
+          monopolyMsg.style.cssText = 'font-size: 0.75em; color: #ff9800; margin-bottom: 8px; text-align: center;';
+          monopolyMsg.textContent = '⚠️ Need full set to build';
+          controls.appendChild(monopolyMsg);
+        }
+
+        // Build/Sell info
+        const info = document.createElement('div');
+        info.style.cssText = 'display: flex; justify-content: space-between; font-size: 0.8em; margin-bottom: 8px; color: #aaa;';
+
+        let buildText = '';
+        let sellText = '';
+
+        if (own.hotel) {
+          buildText = 'Max level';
+          sellText = `Sell: $${hotelSellPrice}`;
+        } else if (own.houses === 4) {
+          buildText = `Hotel: $${hotelPrice}`;
+          sellText = `Sell: $${houseSellPrice}`;
+        } else if (own.houses > 0) {
+          buildText = `House: $${housePrice}`;
+          sellText = `Sell: $${houseSellPrice}`;
+        } else {
+          buildText = `House: $${housePrice}`;
+          sellText = 'No buildings';
+        }
+
+        info.innerHTML = `<span>${buildText}</span><span>${sellText}</span>`;
+        controls.appendChild(info);
+
+        // Buttons
+        const buttons = document.createElement('div');
+        buttons.style.cssText = 'display: flex; gap: 8px;';
+
+        // Build button (↑)
+        const buildBtn = document.createElement('button');
+        buildBtn.className = 'btn-richup secondary';
+        buildBtn.style.cssText = 'flex: 1; font-size: 1.2em;';
+        buildBtn.textContent = '↑ Build';
+
+        // Determine if can build
+        let canBuild = false;
+        let buildAction = null;
+
+        if (hasMonopoly && !own.hotel) {
+          if (own.houses < 4) {
+            // Can build house
+            canBuild = myPlayer.money >= housePrice;
+            buildAction = 'house';
+          } else if (own.houses === 4) {
+            // Can upgrade to hotel
+            canBuild = myPlayer.money >= hotelPrice;
+            buildAction = 'hotel';
+          }
+        }
+
+        buildBtn.disabled = !canBuild;
+        if (canBuild) {
+          buildBtn.onclick = () => {
+            if (buildAction === 'house') {
+              socket.emit('build_house', { propertyId: Number(pid) });
+            } else if (buildAction === 'hotel') {
+              socket.emit('build_hotel', { propertyId: Number(pid) });
+            }
+          };
+        }
+
+        // Sell button (↓)
+        const sellBtn = document.createElement('button');
+        sellBtn.className = 'btn-richup secondary';
+        sellBtn.style.cssText = 'flex: 1; font-size: 1.2em;';
+        sellBtn.textContent = '↓ Sell';
+
+        // Determine if can sell
+        const canSell = own.hotel || own.houses > 0;
+        sellBtn.disabled = !canSell;
+
+        if (canSell) {
+          sellBtn.onclick = () => {
+            if (own.hotel) {
+              socket.emit('sell_hotel', { propertyId: Number(pid) });
+            } else {
+              socket.emit('sell_house', { propertyId: Number(pid) });
+            }
+          };
+        }
+
+        buttons.appendChild(buildBtn);
+        buttons.appendChild(sellBtn);
+        controls.appendChild(buttons);
+
+        card.appendChild(controls);
+      }
+
       grid.appendChild(card);
     });
 
     propertiesContent.appendChild(grid);
+  }
+
+  // Helper function to check monopoly
+  function checkMonopoly(player, country) {
+    if (!country || !state || !state.board) return false;
+
+    // Get all properties in this country
+    const countryProps = state.board.filter(t => t.country === country && t.type === 'property');
+    if (countryProps.length === 0) return false;
+
+    // Check if player owns ALL properties in this country
+    return countryProps.every(prop => player.ownedProperties[prop.id]);
   }
 
   propertiesModal?.addEventListener('click', (e) => {

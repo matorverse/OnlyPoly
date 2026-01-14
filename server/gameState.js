@@ -35,6 +35,7 @@ class GameState {
     this.hasRolledThisTurn = false;
     this.hasBoughtThisTurn = false;
     this.hasStartedAuctionThisTurn = false;
+    this.paidJailThisTurn = false;
     this._lastRollTime = 0;
 
     // Try to load state from DB on boot
@@ -64,6 +65,7 @@ class GameState {
     this.hasRolledThisTurn = false;
     this.hasBoughtThisTurn = false;
     this.hasStartedAuctionThisTurn = false;
+    this.paidJailThisTurn = false;
     this._lastRollTime = 0;
 
     // Clear DB room
@@ -91,6 +93,7 @@ class GameState {
     this.hasRolledThisTurn = state.hasRolledThisTurn || false;
     this.hasBoughtThisTurn = state.hasBoughtThisTurn || false;
     this.hasStartedAuctionThisTurn = state.hasStartedAuctionThisTurn || false;
+    this.paidJailThisTurn = state.paidJailThisTurn || false;
   }
 
   reconnectPlayer(id, newSocketId) {
@@ -236,6 +239,19 @@ class GameState {
   get currentPlayer() { return this.players[this.currentPlayerId] || null; }
   assertTurn(playerId) { return this.currentPlayerId === playerId; }
   getTile(id) { return BOARD.find((t) => t.id === id); }
+  hasMonopoly(playerId, country) {
+    if (!country || !playerId) return false;
+    const player = this.players[playerId];
+    if (!player) return false;
+
+    // Get all properties in this country
+    const countryProps = BOARD.filter(t => t.country === country && t.type === TILE_TYPES.PROPERTY);
+    if (countryProps.length === 0) return false;
+
+    // Check if player owns ALL properties in this country
+    return countryProps.every(prop => player.ownedProperties[prop.id]);
+  }
+
   doesPlayerOwnProperty(playerId, propertyId) {
     const p = this.players[playerId];
     return p ? !!p.ownedProperties[propertyId] : false;
@@ -259,6 +275,10 @@ class GameState {
     const player = this.players[playerId];
     const tile = this.getTile(propertyId);
     if (!player || !tile || tile.type !== TILE_TYPES.PROPERTY) return false;
+
+    // Check if player has monopoly on this country
+    if (!this.hasMonopoly(playerId, tile.country)) return false;
+
     const own = player.ownedProperties[propertyId];
     if (!own || own.hotel || own.houses >= 4) return false;
     const cost = Number(tile.housePrice);
@@ -277,6 +297,10 @@ class GameState {
     const player = this.players[playerId];
     const tile = this.getTile(propertyId);
     if (!player || !tile || tile.type !== TILE_TYPES.PROPERTY) return false;
+
+    // Check if player has monopoly on this country
+    if (!this.hasMonopoly(playerId, tile.country)) return false;
+
     const own = player.ownedProperties[propertyId];
     if (!own || own.hotel || own.houses < 4) return false;
     const cost = Number(tile.hotelPrice);
@@ -284,11 +308,49 @@ class GameState {
 
     if (this.transferMoney(playerId, null, cost, 'build_hotel')) {
       own.hotel = true;
+      own.houses = 0; // Remove houses when hotel is built
       this.checkBankruptcy(playerId);
       this.persist();
       return true;
     }
     return false;
+  }
+
+  sellHouse(playerId, propertyId) {
+    const player = this.players[playerId];
+    const tile = this.getTile(propertyId);
+    if (!player || !tile || tile.type !== TILE_TYPES.PROPERTY) return false;
+    const own = player.ownedProperties[propertyId];
+
+    // Can't sell if no houses or has hotel
+    if (!own || own.houses <= 0 || own.hotel) return false;
+
+    // Refund 50% of house price
+    const refund = Math.floor(Number(tile.housePrice) * 0.5);
+    player.money += refund;
+    own.houses -= 1;
+
+    this.persist();
+    return true;
+  }
+
+  sellHotel(playerId, propertyId) {
+    const player = this.players[playerId];
+    const tile = this.getTile(propertyId);
+    if (!player || !tile || tile.type !== TILE_TYPES.PROPERTY) return false;
+    const own = player.ownedProperties[propertyId];
+
+    // Can't sell if no hotel
+    if (!own || !own.hotel) return false;
+
+    // Refund 50% of hotel price, revert to 4 houses
+    const refund = Math.floor(Number(tile.hotelPrice) * 0.5);
+    player.money += refund;
+    own.hotel = false;
+    own.houses = 4;
+
+    this.persist();
+    return true;
   }
 
   payJailFine(playerId) {
@@ -297,6 +359,7 @@ class GameState {
     if (this.settlePayment(playerId, null, 100, 'jail_fine')) {
       player.inJail = false;
       player.jailTurns = 0;
+      this.paidJailThisTurn = true; // Prevent rolling this turn
       this.checkBankruptcy(playerId);
       this.persist();
       return true;
@@ -307,14 +370,24 @@ class GameState {
   endTurn(playerId) {
     if (!this.assertTurn(playerId)) return false;
     const player = this.players[playerId];
+
+    // Handle jail turn skipping
     if (player && player.inJail) {
       player.jailTurns -= 1;
-      if (player.jailTurns <= 0) player.inJail = false;
+      if (player.jailTurns <= 0) {
+        player.inJail = false;
+        player.jailTurns = 0;
+      }
     }
+
     if (this.turnOrder.length === 0) return false;
+
+    // Reset turn flags
     this.hasRolledThisTurn = false;
     this.hasBoughtThisTurn = false;
     this.hasStartedAuctionThisTurn = false;
+    this.paidJailThisTurn = false;
+
     this.currentTurnIndex = (this.currentTurnIndex + 1) % this.turnOrder.length;
     this.persist();
     return true;
@@ -324,7 +397,9 @@ class GameState {
     if (!this.assertTurn(playerId)) return null;
     if (this.hasRolledThisTurn) return null;
     const player = this.players[playerId];
-    if (!player || player.inJail) return null;
+
+    // Block rolling if in jail OR just paid jail fine this turn
+    if (!player || player.inJail || this.paidJailThisTurn) return null;
 
     const dice = rollDice();
     this.lastDice = dice;
@@ -511,6 +586,7 @@ class GameState {
       hasRolledThisTurn: this.hasRolledThisTurn,
       hasBoughtThisTurn: this.hasBoughtThisTurn,
       hasStartedAuctionThisTurn: this.hasStartedAuctionThisTurn,
+      paidJailThisTurn: this.paidJailThisTurn,
       readyPlayers: Array.from(this.readyPlayers),
     };
   }

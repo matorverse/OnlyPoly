@@ -290,12 +290,31 @@ io.on('connection', async (socket) => {
     if (!ensureReady(socket)) return;
     if (!playerId || !gameState.assertTurn(playerId)) return;
     const player = gameState.players[playerId];
-    if (!player.inJail && !gameState.hasRolledThisTurn) {
+
+    // Check if player is in jail - if so, they don't need to roll
+    const inJail = player && player.inJail;
+
+    if (!inJail && !gameState.hasRolledThisTurn) {
       socket.emit('action_rejected', { reason: 'must_roll_first' });
       return;
     }
+
+    // Store jail info before ending turn
+    const wasInJail = inJail;
+    const jailTurnsRemaining = player ? player.jailTurns : 0;
+
     const ok = gameState.endTurn(playerId);
     if (!ok) return;
+
+    // Emit jail notification if turn was skipped due to jail
+    if (wasInJail && jailTurnsRemaining > 0) {
+      io.emit('jail_turn_skipped', {
+        playerId,
+        playerName: player.name,
+        turnsRemaining: jailTurnsRemaining - 1
+      });
+    }
+
     io.emit('state_update', gameState.serialize());
   });
 
@@ -305,8 +324,19 @@ io.on('connection', async (socket) => {
       socket.emit('action_rejected', { reason: 'not_your_turn' });
       return;
     }
+    const player = gameState.players[playerId];
+    if (!player || !player.inJail) {
+      socket.emit('action_rejected', { reason: 'not_in_jail' });
+      return;
+    }
+    if (player.money < 100) {
+      socket.emit('action_rejected', { reason: 'insufficient_funds' });
+      return;
+    }
+
     const success = gameState.payJailFine(playerId);
     if (success) {
+      io.emit('jail_paid', { playerId, playerName: player.name });
       io.emit('state_update', gameState.serialize());
     } else {
       socket.emit('action_rejected', { reason: 'cannot_pay_fine' });
@@ -329,7 +359,13 @@ io.on('connection', async (socket) => {
     if (success) {
       io.emit('state_update', gameState.serialize());
     } else {
-      socket.emit('action_rejected', { reason: 'cannot_build' });
+      // Check specific failure reasons for better error messages
+      const tile = gameState.getTile(propId);
+      if (tile && !gameState.hasMonopoly(playerId, tile.country)) {
+        socket.emit('action_rejected', { reason: 'no_monopoly' });
+      } else {
+        socket.emit('action_rejected', { reason: 'cannot_build' });
+      }
     }
   });
 
@@ -349,7 +385,45 @@ io.on('connection', async (socket) => {
     if (success) {
       io.emit('state_update', gameState.serialize());
     } else {
-      socket.emit('action_rejected', { reason: 'cannot_build' });
+      // Check specific failure reasons for better error messages
+      const tile = gameState.getTile(propId);
+      if (tile && !gameState.hasMonopoly(playerId, tile.country)) {
+        socket.emit('action_rejected', { reason: 'no_monopoly' });
+      } else {
+        socket.emit('action_rejected', { reason: 'cannot_build' });
+      }
+    }
+  });
+
+  socket.on('sell_house', ({ propertyId }) => {
+    if (!ensureReady(socket)) return;
+    if (!playerId) return;
+    if (!gameState.doesPlayerOwnProperty(playerId, propertyId)) {
+      socket.emit('action_rejected', { reason: 'not_owner' });
+      return;
+    }
+    const propId = Number(propertyId);
+    const success = gameState.sellHouse(playerId, propId);
+    if (success) {
+      io.emit('state_update', gameState.serialize());
+    } else {
+      socket.emit('action_rejected', { reason: 'cannot_sell' });
+    }
+  });
+
+  socket.on('sell_hotel', ({ propertyId }) => {
+    if (!ensureReady(socket)) return;
+    if (!playerId) return;
+    if (!gameState.doesPlayerOwnProperty(playerId, propertyId)) {
+      socket.emit('action_rejected', { reason: 'not_owner' });
+      return;
+    }
+    const propId = Number(propertyId);
+    const success = gameState.sellHotel(playerId, propId);
+    if (success) {
+      io.emit('state_update', gameState.serialize());
+    } else {
+      socket.emit('action_rejected', { reason: 'cannot_sell' });
     }
   });
 

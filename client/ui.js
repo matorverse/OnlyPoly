@@ -119,6 +119,23 @@ window.OnlypolyUI = (function () {
         // content.appendChild(...)
       }
 
+      // 4. Houses/Hotel Indicator (NEW)
+      if (tile.type === 'property' && tile.development) {
+        const devIndicator = document.createElement('div');
+        devIndicator.className = 'tile-development';
+        devIndicator.style.cssText = 'font-size: 0.7em; margin-top: 2px;';
+
+        if (tile.development.hotel) {
+          devIndicator.textContent = '🏨';
+          devIndicator.title = 'Hotel';
+        } else if (tile.development.houses > 0) {
+          devIndicator.textContent = '🏠'.repeat(Math.min(tile.development.houses, 4));
+          devIndicator.title = `${tile.development.houses} house${tile.development.houses > 1 ? 's' : ''}`;
+        }
+
+        content.appendChild(devIndicator);
+      }
+
       div.appendChild(content);
 
       // --- CORNER HANDLING ---
