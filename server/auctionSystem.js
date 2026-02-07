@@ -86,6 +86,10 @@ class AuctionSystem {
 
     this.io.emit('auction_finished', auction);
     this.currentAuction = null;
+
+    // Persist state and notify all clients of property ownership change
+    this.gameState.persist();
+    this.io.emit('state_update', this.gameState.serialize());
   }
 }
 

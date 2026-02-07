@@ -268,6 +268,9 @@ io.on('connection', async (socket) => {
     if (!auction) {
       gameState.hasStartedAuctionThisTurn = false;
       socket.emit('action_rejected', { reason: 'cannot_start_auction' });
+    } else {
+      // Emit state update so clients know auction has started
+      io.emit('state_update', gameState.serialize());
     }
   });
 

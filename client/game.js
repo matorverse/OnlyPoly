@@ -288,10 +288,6 @@
     }
   });
 
-  playersBtn?.addEventListener('click', () => {
-    secondaryMenu.classList.add('hidden');
-    OnlypolyUI.toast('Players info coming soon!');
-  });
 
   auctionModal.addEventListener('click', (e) => {
     if (e.target.classList.contains('bid')) {
@@ -1581,10 +1577,6 @@
       `;
       propertiesList.appendChild(card);
     });
-  }
-
-  function renderColorSelection() {
-    if (!document.getElementById('colorGrid')) return;
   }
 
 })();
